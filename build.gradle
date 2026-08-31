@@ -1,0 +1,37 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.rapaduraatomica'
+version = '0.1.0'
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    gdxVersion = '1.13.1'
+}
+
+dependencies {
+    // Núcleo do libGDX: matemática, coleções, ciclo de vida da aplicação.
+    implementation "com.badlogicgames.gdx:gdx:$gdxVersion"
+
+    // Backend desktop (LWJGL3): janela, contexto OpenGL, teclado/mouse.
+    implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+
+    // Bibliotecas nativas (.so/.dll/.dylib) que o backend carrega em runtime.
+    // É runtimeOnly porque nada no código-fonte importa essas classes.
+    runtimeOnly "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+application {
+    mainClass = 'com.rapaduraatomica.isoforge.DesktopLauncher'
+}
