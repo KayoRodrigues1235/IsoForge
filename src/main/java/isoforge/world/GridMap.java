@@ -1,4 +1,4 @@
-package com.rapaduraatomica.isoforge.world;
+package isoforge.world;
 
 /**
  * O mapa: uma grade fixa de tiles, cada um com terreno e altura.

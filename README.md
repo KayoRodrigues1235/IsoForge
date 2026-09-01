@@ -13,7 +13,7 @@ O adversário é uma IA disputando o mesmo mapa por território e recursos — a
 ## Estrutura do código
 
 ```
-src/main/java/com/rapaduraatomica/isoforge/
+src/main/java/isoforge/
 ├── DesktopLauncher.java   # abre a janela, entrega o jogo pro backend LWJGL3
 ├── IsoForgeGame.java      # o loop: câmera, input, picking, desenho
 ├── world/                 # o mapa e sua matemática

@@ -1,4 +1,4 @@
-package com.rapaduraatomica.isoforge.entity;
+package isoforge.entity;
 
 import com.badlogic.gdx.math.GridPoint2;
 

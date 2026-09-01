@@ -3,7 +3,7 @@ plugins {
     id 'application'
 }
 
-group = 'com.rapaduraatomica'
+group = 'isoforge'
 version = '0.1.0'
 
 repositories {
@@ -33,5 +33,5 @@ java {
 }
 
 application {
-    mainClass = 'com.rapaduraatomica.isoforge.DesktopLauncher'
+    mainClass = 'isoforge.DesktopLauncher'
 }

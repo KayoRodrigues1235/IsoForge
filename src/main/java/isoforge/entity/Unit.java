@@ -1,10 +1,10 @@
-package com.rapaduraatomica.isoforge.entity;
+package isoforge.entity;
 
 import com.badlogic.gdx.math.GridPoint2;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
-import com.rapaduraatomica.isoforge.world.GridMap;
+import isoforge.world.GridMap;
 
 /**
  * Um personagem que pega tarefas do {@link JobBoard} e as executa.

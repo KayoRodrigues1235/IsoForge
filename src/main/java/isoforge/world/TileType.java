@@ -1,4 +1,4 @@
-package com.rapaduraatomica.isoforge.world;
+package isoforge.world;
 
 import com.badlogic.gdx.graphics.Color;
 

@@ -1,4 +1,4 @@
-package com.rapaduraatomica.isoforge.world;
+package isoforge.world;
 
 import com.badlogic.gdx.math.GridPoint2;
 import com.badlogic.gdx.utils.Array;

@@ -1,9 +1,9 @@
-package com.rapaduraatomica.isoforge.entity;
+package isoforge.entity;
 
 import com.badlogic.gdx.math.GridPoint2;
 import com.badlogic.gdx.utils.Array;
-import com.rapaduraatomica.isoforge.world.GridMap;
-import com.rapaduraatomica.isoforge.world.PathFinder;
+import isoforge.world.GridMap;
+import isoforge.world.PathFinder;
 
 /**
  * O quadro de tarefas: a fila de trabalho que as unidades consultam sozinhas.

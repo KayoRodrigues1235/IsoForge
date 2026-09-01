@@ -1,4 +1,4 @@
-package com.rapaduraatomica.isoforge;
+package isoforge;
 
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
@@ -17,12 +17,12 @@ import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
-import com.rapaduraatomica.isoforge.entity.Job;
-import com.rapaduraatomica.isoforge.entity.JobBoard;
-import com.rapaduraatomica.isoforge.entity.Unit;
-import com.rapaduraatomica.isoforge.world.GridMap;
-import com.rapaduraatomica.isoforge.world.IsoProjector;
-import com.rapaduraatomica.isoforge.world.PathFinder;
+import isoforge.entity.Job;
+import isoforge.entity.JobBoard;
+import isoforge.entity.Unit;
+import isoforge.world.GridMap;
+import isoforge.world.IsoProjector;
+import isoforge.world.PathFinder;
 
 import java.util.Arrays;
 
