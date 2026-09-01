@@ -5,6 +5,7 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
 import isoforge.world.GridMap;
+import isoforge.world.PathFinder;
 
 /**
  * Um personagem que pega tarefas do {@link JobBoard} e as executa.
@@ -25,6 +26,12 @@ import isoforge.world.GridMap;
  *
  * <p>O nível visual é interpolado ao longo de cada trecho. Sem isso a unidade
  * "teleporta" verticalmente ao pisar na rampa, um degrau inteiro de uma vez.
+ *
+ * <p><b>Chegar nem sempre termina a tarefa.</b> Numa {@code MOVE}, sim; numa
+ * {@code CHOP}, chegar à árvore só inicia o corte. É por isso que o {@link
+ * PathFinder} entra em {@link #update}: quando o cronômetro de corte zera, a
+ * própria unidade calcula o caminho de volta ao depósito, sem precisar que o
+ * jogo pergunte a cada frame se alguém terminou de trabalhar.
  */
 public final class Unit {
 
@@ -32,8 +39,10 @@ public final class Unit {
     private static final float SPEED = 3.2f;
 
     private final int id;
+    private final String name;
     private final Vector2 position = new Vector2();
     private final Array<GridPoint2> path = new Array<>();
+    private final Array<GridPoint2> returnPathScratch = new Array<>();
     private int pathIndex;
 
     private Job currentJob;
@@ -43,8 +52,9 @@ public final class Unit {
     private int segmentToLevel;
     private float visualLevel;
 
-    public Unit(int id, int gridX, int gridY, GridMap map) {
+    public Unit(int id, String name, int gridX, int gridY, GridMap map) {
         this.id = id;
+        this.name = name;
         position.set(gridX, gridY);
         int level = map.getLevel(gridX, gridY);
         segmentFromLevel = level;
@@ -63,11 +73,7 @@ public final class Unit {
         setPath(jobPath, map);
     }
 
-    /**
-     * Marca a tarefa atual como concluída. O jogo chama isto quando a unidade
-     * para de andar tendo trabalho em mãos — no M1.5, chegar ao destino <i>é</i>
-     * concluir. No M2, chegar até a árvore será só o começo da tarefa.
-     */
+    /** Marca a tarefa atual como concluída e solta a referência. */
     public void finishJob() {
         if (currentJob != null) {
             currentJob.complete();
@@ -78,6 +84,14 @@ public final class Unit {
     /** Abandona tarefa e caminho. Usado quando o jogador cancela tudo. */
     public void stop() {
         if (currentJob != null) {
+            // Se era um corte ainda em andamento, a árvore não chegou a cair —
+            // libera a reserva para outra tarefa poder mirar nela de novo.
+            if (currentJob.getType() == Job.Type.CHOP) {
+                Tree tree = currentJob.getTree();
+                if (tree != null && !tree.isChopped()) {
+                    tree.release();
+                }
+            }
             currentJob.complete();
             currentJob = null;
         }
@@ -103,11 +117,31 @@ public final class Unit {
         segmentToLevel = map.getLevel(target.x, target.y);
     }
 
-    public void update(float delta, GridMap map) {
-        if (pathIndex >= path.size) {
+    public void update(float delta, GridMap map, PathFinder finder) {
+        if (isMoving()) {
+            advance(delta, map);
+            if (!isMoving() && currentJob != null) {
+                onArrival();
+            }
             return;
         }
 
+        if (currentJob != null && currentJob.getPhase() == Job.Phase.WORKING) {
+            if (currentJob.tickWork(delta)) {
+                GridPoint2 target = currentJob.getTarget();
+                GridPoint2 depot = currentJob.getDepot();
+                if (finder.findPath(target.x, target.y, depot.x, depot.y, returnPathScratch)) {
+                    setPath(returnPathScratch, map);
+                } else {
+                    // Sem caminho de volta (não deveria acontecer no mapa
+                    // atual): encerra em vez de deixar a unidade presa na árvore.
+                    finishJob();
+                }
+            }
+        }
+    }
+
+    private void advance(float delta, GridMap map) {
         GridPoint2 target = path.get(pathIndex);
         float dx = target.x - position.x;
         float dy = target.y - position.y;
@@ -135,13 +169,42 @@ public final class Unit {
         visualLevel = MathUtils.lerp(segmentFromLevel, segmentToLevel, progress);
     }
 
+    private void onArrival() {
+        currentJob.arrive();
+        if (currentJob.isDone()) {
+            finishJob();
+        }
+    }
+
     /** Célula em que a unidade está (a mais próxima, se estiver entre duas). */
     public GridPoint2 getCell(GridPoint2 out) {
         return out.set(Math.round(position.x), Math.round(position.y));
     }
 
+    /** Rótulo curto do que a unidade está fazendo agora, para o painel lateral. */
+    public String describeState() {
+        if (currentJob == null) {
+            return "Ocioso";
+        }
+        if (currentJob.getType() == Job.Type.CHOP) {
+            switch (currentJob.getPhase()) {
+                case WORKING:
+                    return "Cortando";
+                case TO_DEPOT:
+                    return "Levando lenha";
+                default:
+                    return "Andando";
+            }
+        }
+        return "Andando";
+    }
+
     public int getId() {
         return id;
+    }
+
+    public String getName() {
+        return name;
     }
 
     public Vector2 getPosition() {

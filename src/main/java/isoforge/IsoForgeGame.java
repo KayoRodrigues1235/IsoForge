@@ -19,6 +19,7 @@ import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
 import isoforge.entity.Job;
 import isoforge.entity.JobBoard;
+import isoforge.entity.Tree;
 import isoforge.entity.Unit;
 import isoforge.world.GridMap;
 import isoforge.world.IsoProjector;
@@ -27,17 +28,13 @@ import isoforge.world.PathFinder;
 import java.util.Arrays;
 
 /**
- * M1.5 — várias unidades comandadas por quadro de tarefas.
+ * M2 — árvores, corte e depósito: o loop autônomo do Castle Story.
  *
- * <p>O M1 tinha uma unidade e o clique a movia. Agora há cinco, e o clique não
- * move ninguém em particular: ele <b>publica uma tarefa</b>, e a unidade livre
- * mais próxima a assume. É o modelo do Castle Story, e é o que dispensa
- * seleção por caixa, grupos e formação — o gesto do jogador é o mesmo com 5 ou
- * com 50 unidades.
- *
- * <p>"Mais próxima" é medida por <b>caminho real</b>, não por linha reta. Com
- * um platô no meio do mapa a linha reta mente: um destino do outro lado da
- * parede parece perto e está a trinta passos, do outro lado da rampa.
+ * <p>O clique publica uma tarefa no quadro, e a unidade livre mais próxima
+ * <i>por caminho real</i> a assume (M1.5). A novidade do M2 é que clicar numa
+ * árvore não é mais um deslocamento: é ir até lá, cortar (parada, cronômetro
+ * correndo) e levar a lenha até o depósito. Chegar à árvore é o começo da
+ * tarefa, não o fim — ver a fase de {@link Job} e a progressão em {@link Unit}.
  *
  * <p>Unidades não se bloqueiam — atravessam umas às outras, com um pequeno
  * deslocamento no desenho para não sumirem uma dentro da outra. Ver a nota em
@@ -64,8 +61,26 @@ public class IsoForgeGame extends ApplicationAdapter {
             {5, 21}, {4, 21}, {6, 21}, {4, 20}, {6, 20}
     };
 
+    /** Sem critério nenhum na escolha — placeholder até o jogador trocar. */
+    private static final String[] UNIT_NAMES = {"Tico", "Teco", "Bento", "Duda", "Nico"};
+
     private static final float UNIT_BODY_HEIGHT = 24f;
     private static final float UNIT_SCALE = 0.34f;
+
+    /** Onde a lenha cortada é entregue. Perto do spawn, longe do lago e da rampa. */
+    private static final GridPoint2 DEPOT = new GridPoint2(5, 23);
+
+    /** Um bosque a oeste do spawn — grama plana, fora do alcance do lago. */
+    private static final int[][] TREE_SPOTS = {
+            {2, 18}, {3, 19}, {1, 20}, {2, 21}, {3, 23}, {2, 25}
+    };
+
+    private static final float TREE_SCALE = 0.5f;
+    private static final float TREE_TRUNK_HEIGHT = 10f;
+    private static final float TREE_CANOPY_HEIGHT = 22f;
+    private static final Color TREE_TRUNK = new Color(0.45f, 0.32f, 0.20f, 1f);
+    private static final Color TREE_LEAVES = new Color(0.25f, 0.55f, 0.28f, 1f);
+    private static final Color DEPOT_MARKER = new Color(0.95f, 0.75f, 0.25f, 0.35f);
 
     /**
      * Deslocamento no desenho para unidades na mesma célula não se sobreporem.
@@ -109,6 +124,8 @@ public class IsoForgeGame extends ApplicationAdapter {
     private PathFinder pathFinder;
     private JobBoard jobBoard;
     private final Array<Unit> units = new Array<>();
+    private final Array<Tree> trees = new Array<>();
+    private int woodStock;
 
     private OrthographicCamera camera;
     private ScreenViewport viewport;
@@ -144,7 +161,12 @@ public class IsoForgeGame extends ApplicationAdapter {
         jobBoard = new JobBoard();
 
         for (int i = 0; i < UNIT_SPAWNS.length; i++) {
-            units.add(new Unit(i, UNIT_SPAWNS[i][0], UNIT_SPAWNS[i][1], map));
+            String name = UNIT_NAMES[i % UNIT_NAMES.length];
+            units.add(new Unit(i, name, UNIT_SPAWNS[i][0], UNIT_SPAWNS[i][1], map));
+        }
+
+        for (int i = 0; i < TREE_SPOTS.length; i++) {
+            trees.add(new Tree(i, TREE_SPOTS[i][0], TREE_SPOTS[i][1]));
         }
 
         int cells = map.getWidth() * map.getHeight();
@@ -180,7 +202,7 @@ public class IsoForgeGame extends ApplicationAdapter {
             @Override
             public boolean touchDown(int screenX, int screenY, int pointer, int button) {
                 if (button == Input.Buttons.LEFT && hoverValid) {
-                    postMoveJob(hoveredCell.x, hoveredCell.y);
+                    postJob(hoveredCell.x, hoveredCell.y);
                     return true;
                 }
                 if (button == Input.Buttons.RIGHT) {
@@ -206,19 +228,39 @@ public class IsoForgeGame extends ApplicationAdapter {
     }
 
     /**
-     * Publica uma tarefa de deslocamento e tenta atribuí-la na hora.
+     * Publica uma tarefa no tile clicado e tenta atribuí-la na hora.
      *
-     * <p>A atribuição imediata é só para o clique parecer responsivo: sem ela o
-     * jogador esperaria até {@link #CLAIM_INTERVAL} para ver alguém se mexer.
+     * <p>Clicar numa árvore viva publica corte, não deslocamento — é o mesmo
+     * gesto de sempre, só que o quadro decide o tipo de tarefa pelo que está
+     * no tile. A atribuição imediata é só para o clique parecer responsivo:
+     * sem ela o jogador esperaria até {@link #CLAIM_INTERVAL} para ver alguém
+     * se mexer.
      */
-    private void postMoveJob(int x, int y) {
-        Job job = jobBoard.postMove(x, y, map);
+    private void postJob(int x, int y) {
+        Tree tree = findTreeAt(x, y);
+        Job job = tree != null
+                ? jobBoard.postChop(tree, DEPOT.x, DEPOT.y)
+                : jobBoard.postMove(x, y, map);
+
         if (job == null) {
-            orderStatus = "(" + x + ", " + y + ") nao e caminhavel";
+            orderStatus = tree != null
+                    ? "arvore (" + x + ", " + y + ") ja tem tarefa"
+                    : "(" + x + ", " + y + ") nao e caminhavel";
             return;
         }
-        orderStatus = "tarefa publicada em (" + x + ", " + y + ")";
+        orderStatus = tree != null
+                ? "corte publicado na arvore (" + x + ", " + y + ")"
+                : "tarefa publicada em (" + x + ", " + y + ")";
         runClaimPass();
+    }
+
+    private Tree findTreeAt(int x, int y) {
+        for (Tree tree : trees) {
+            if (!tree.isChopped() && tree.getX() == x && tree.getY() == y) {
+                return tree;
+            }
+        }
+        return null;
     }
 
     private void cancelEverything() {
@@ -248,11 +290,18 @@ public class IsoForgeGame extends ApplicationAdapter {
         }
 
         for (Unit unit : units) {
-            unit.update(delta, map);
-            // Parou de andar com tarefa em mãos = chegou. No M2, chegar até a
-            // árvore vai ser o começo do trabalho, não o fim dele.
-            if (unit.getCurrentJob() != null && !unit.isMoving()) {
-                unit.finishJob();
+            // "Voltando com lenha" antes do update e "sem tarefa" depois =
+            // chegou ao depósito e entregou nesta chamada. Detectar pela
+            // borda evita precisar que Job avise o jogo diretamente.
+            Job job = unit.getCurrentJob();
+            boolean wasReturning = job != null
+                    && job.getType() == Job.Type.CHOP
+                    && job.getPhase() == Job.Phase.TO_DEPOT;
+
+            unit.update(delta, map, pathFinder);
+
+            if (wasReturning && unit.getCurrentJob() == null) {
+                woodStock++;
             }
         }
         jobBoard.purgeCompleted();
@@ -371,6 +420,11 @@ public class IsoForgeGame extends ApplicationAdapter {
             for (int x = xStart; x <= xEnd; x++) {
                 drawTile(x, sum - x);
             }
+            for (Tree tree : trees) {
+                if (!tree.isChopped() && tree.getX() + tree.getY() == sum) {
+                    drawTree(tree);
+                }
+            }
             for (Unit unit : units) {
                 Vector2 pos = unit.getPosition();
                 if (Math.round(pos.x + pos.y) == sum) {
@@ -425,6 +479,32 @@ public class IsoForgeGame extends ApplicationAdapter {
             shapes.setColor(PATH_MARKER);
             fillDiamond(topX, topY, rightX, rightY, bottomX, bottomY, leftX, leftY);
         }
+
+        if (gridX == DEPOT.x && gridY == DEPOT.y) {
+            shapes.setColor(DEPOT_MARKER);
+            fillDiamond(topX, topY, rightX, rightY, bottomX, bottomY, leftX, leftY);
+        }
+    }
+
+    /** Uma árvore: tronco retangular e copa em losango, na mesma técnica dos tiles. */
+    private void drawTree(Tree tree) {
+        int level = map.getLevel(tree.getX(), tree.getY());
+        projector.gridToWorld(tree.getX(), tree.getY(), level, scratch);
+
+        float hw = projector.getHalfWidth() * TREE_SCALE;
+        float trunkHalf = hw * 0.3f;
+        float trunkTopY = scratch.y + TREE_TRUNK_HEIGHT;
+
+        shapes.setColor(TREE_TRUNK);
+        fillQuad(scratch.x - trunkHalf, scratch.y, scratch.x + trunkHalf, scratch.y,
+                scratch.x + trunkHalf, trunkTopY, scratch.x - trunkHalf, trunkTopY);
+
+        float canopyCenterY = trunkTopY + TREE_CANOPY_HEIGHT * 0.5f;
+        shapes.setColor(TREE_LEAVES);
+        fillDiamond(scratch.x, canopyCenterY + TREE_CANOPY_HEIGHT * 0.5f,
+                scratch.x + hw, canopyCenterY,
+                scratch.x, canopyCenterY - TREE_CANOPY_HEIGHT * 0.5f,
+                scratch.x - hw, canopyCenterY);
     }
 
     /** A unidade é uma coluninha: mesma técnica dos tiles, em escala menor. */
@@ -516,11 +596,26 @@ public class IsoForgeGame extends ApplicationAdapter {
         font.draw(batch, "Unidades: " + units.size + "   ociosas: " + idle, 12f, top - 20f);
         font.draw(batch, "Tarefas: " + jobBoard.getTotalCount()
                 + "   sem dono: " + jobBoard.getOpenCount(), 12f, top - 40f);
-        font.draw(batch, "Ordem: " + orderStatus, 12f, top - 60f);
-        font.draw(batch, String.format("Zoom: %.2f   FPS: %d", camera.zoom, Gdx.graphics.getFramesPerSecond()), 12f, top - 80f);
-        font.draw(batch, "Clique esq: publicar tarefa   Clique dir: cancelar tudo   "
-                + "WASD: camera   Scroll: zoom   G: grid   ESC: sair", 12f, top - 100f);
+        font.draw(batch, "Madeira no deposito: " + woodStock, 12f, top - 60f);
+        font.draw(batch, "Ordem: " + orderStatus, 12f, top - 80f);
+        font.draw(batch, String.format("Zoom: %.2f   FPS: %d", camera.zoom, Gdx.graphics.getFramesPerSecond()), 12f, top - 100f);
+        font.draw(batch, "Clique esq: publicar tarefa (arvore = cortar)   Clique dir: cancelar tudo   "
+                + "WASD: camera   Scroll: zoom   G: grid   ESC: sair", 12f, top - 120f);
+
+        drawUnitPanel(top);
         batch.end();
+    }
+
+    /** Tabela à direita: uma linha por unidade, nome e o que está fazendo agora. */
+    private void drawUnitPanel(float top) {
+        float panelX = Gdx.graphics.getWidth() - 190f;
+        font.draw(batch, "Unidades", panelX, top);
+        for (int i = 0; i < units.size; i++) {
+            Unit unit = units.get(i);
+            font.setColor(UNIT_COLORS[unit.getId() % UNIT_COLORS.length]);
+            font.draw(batch, unit.getName() + ": " + unit.describeState(), panelX, top - 20f - i * 20f);
+        }
+        font.setColor(Color.WHITE);
     }
 
     @Override

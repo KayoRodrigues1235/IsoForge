@@ -51,6 +51,21 @@ public final class JobBoard {
     }
 
     /**
+     * Publica uma tarefa de corte na árvore. Devolve null se ela já estiver
+     * reservada por outra tarefa ou já tiver caído — nesses casos o quadro
+     * não duplica trabalho na mesma árvore.
+     */
+    public Job postChop(Tree tree, int depotX, int depotY) {
+        if (tree == null || !tree.isAvailable()) {
+            return null;
+        }
+        tree.reserve();
+        Job job = Job.chop(tree, depotX, depotY);
+        post(job);
+        return job;
+    }
+
+    /**
      * Distribui as tarefas abertas entre as unidades ociosas.
      *
      * <p>Para cada tarefa sem dono, calcula o caminho a partir de cada unidade
