@@ -38,6 +38,10 @@ src/main/java/isoforge/
 │   ├── Building.java      #   canteiro → obra em progresso → obstáculo
 │   ├── BuildingType.java  #   catálogo: custo, tempo e aparência
 │   └── Stockpile.java     #   estoque, com reserva separada do gasto
+├── ui/                    # a interface, por fora de qualquer renderizador
+│   ├── GameHud.java       #   recursos, tempo, paleta de construção, unidades
+│   ├── HudActions.java    #   o contrato entre a interface e o jogo
+│   └── ProceduralSkin.java #  skin do Scene2D montada em código, sem assets
 └── fx/
     └── Particles.java     #   lascas e poeira, em coordenadas de simulação
 ```
@@ -92,9 +96,9 @@ source "$HOME/.sdkman/bin/sdkman-init.sh"
 | `SPACE` | pausa |
 | `,` `.` | velocidade da simulação (1x / 2x / 4x) |
 | `WASD` / setas | move a câmera · **scroll** dá zoom |
-| `G` | liga/desliga a grade · `ESC` sai |
+| `G` | liga/desliga a grade · `F3` abre o painel de depuração · `ESC` sai |
 
-O relógio no canto é de verdade: um dia leva 150 segundos de tempo simulado, e a luz do sol multiplica as cores do mundo — mas nunca as da interface, que precisa ser legível às três da manhã.
+Todo comando tem botão no HUD — o teclado é atalho, não a única porta. O relógio no canto é de verdade: um dia leva 150 segundos de tempo simulado, e a luz do sol multiplica as cores do mundo — mas nunca as da interface, que precisa ser legível às três da manhã.
 
 ## Stack
 

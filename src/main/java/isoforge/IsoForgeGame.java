@@ -4,46 +4,43 @@ import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.InputAdapter;
-import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.InputMultiplexer;
 import com.badlogic.gdx.graphics.GL20;
-import com.badlogic.gdx.graphics.g2d.BitmapFont;
-import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.GridPoint2;
-import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.utils.Array;
 import isoforge.entity.BuildingType;
-import isoforge.entity.Unit;
 import isoforge.render.Cursor;
 import isoforge.render.IsoShapeRenderer;
 import isoforge.render.WorldRenderer;
 import isoforge.sim.World;
+import isoforge.ui.GameHud;
+import isoforge.ui.HudActions;
 import isoforge.world.GridMap;
 
 /**
- * O jogo: quem ouve o jogador, decide quanto tempo entregar à simulação e
- * mostra os números.
+ * O jogo: quem ouve o jogador, decide quanto tempo entregar à simulação e liga
+ * as três camadas que fazem o resto.
  *
- * <p>Depois da fase 1 da migração esta classe não é mais "o jogo" no sentido
- * de conter o jogo. O estado vive em {@link World}, que não conhece um pixel; o
- * desenho, a câmera e o <i>picking</i> vivem atrás de {@link WorldRenderer},
- * que existe em duas versões (por ora, uma). Sobrou o meio de campo: traduzir
- * teclas e cliques em comandos, escolher o {@code delta} do frame, e desenhar
- * a interface.
+ * <p>Não é mais "o jogo" no sentido de conter o jogo. O estado vive em {@link
+ * World}, que não conhece um pixel; o desenho, a câmera e o <i>picking</i>
+ * vivem atrás de {@link WorldRenderer}; a interface vive em {@link GameHud} e
+ * fala com esta classe pelo contrato {@link HudActions}. Sobrou o meio de
+ * campo — traduzir teclas e cliques em comandos, e escolher o {@code delta} do
+ * frame.
  *
  * <p>Duas decisões que valem ser ditas em voz alta:
  *
  * <ul>
- *   <li><b>Simulação e apresentação têm relógios diferentes.</b> A câmera e o
- *       cursor andam com o tempo real; unidades, obras e o sol andam com o
- *       tempo simulado, que pausa e acelera. Misturar os dois faria a câmera
- *       congelar junto com o jogo.</li>
- *   <li><b>O HUD é desenhado aqui, por fora do renderizador.</b> Ele precisa
- *       sobreviver à troca do desenho do mundo sem ser tocado — e, mais
- *       adiante, ser substituído por Scene2D sem que nenhum renderizador
- *       fique sabendo.</li>
+ *   <li><b>Simulação e apresentação têm relógios diferentes.</b> A câmera, o
+ *       cursor e as animações da interface andam com o tempo real; unidades,
+ *       obras e o sol andam com o tempo simulado, que pausa e acelera.
+ *       Misturar os dois faria a câmera congelar junto com o jogo.</li>
+ *   <li><b>Teclado e botões são a mesma porta.</b> Toda tecla chama exatamente
+ *       o mesmo método que o botão correspondente do HUD. Se fossem caminhos
+ *       separados, um deles ficaria para trás na primeira mudança de regra.</li>
  * </ul>
  */
-public class IsoForgeGame extends ApplicationAdapter {
+public class IsoForgeGame extends ApplicationAdapter implements HudActions {
 
     /** Onde a lenha é entregue e de onde o material de obra sai. */
     private static final int DEPOT_X = 5;
@@ -63,25 +60,13 @@ public class IsoForgeGame extends ApplicationAdapter {
             {1, 27}, {4, 27}, {6, 26}, {7, 24}
     };
 
-    /** Multiplicadores de velocidade da simulação, ciclados por vírgula/ponto. */
+    /** Multiplicadores de velocidade da simulação. */
     private static final float[] TIME_SCALES = {1f, 2f, 4f};
-
-    /** Repetido do renderizador só para colorir o painel lateral. */
-    private static final Color[] UNIT_COLORS = {
-            new Color(0.93f, 0.56f, 0.22f, 1f),
-            new Color(0.85f, 0.36f, 0.36f, 1f),
-            new Color(0.42f, 0.68f, 0.92f, 1f),
-            new Color(0.76f, 0.80f, 0.34f, 1f),
-            new Color(0.78f, 0.50f, 0.82f, 1f),
-    };
 
     private World world;
     private WorldRenderer renderer;
+    private GameHud hud;
     private final Cursor cursor = new Cursor();
-
-    private SpriteBatch batch;
-    private BitmapFont font;
-    private final Matrix4 hudMatrix = new Matrix4();
 
     private final Array<GridPoint2> dragCells = new Array<>();
     private boolean dragging;
@@ -92,7 +77,7 @@ public class IsoForgeGame extends ApplicationAdapter {
     private boolean buildMode;
     private BuildingType selectedType = BuildingType.CABANA;
 
-    private String orderStatus = "clique (ou arraste) para publicar tarefas";
+    private String orderStatus = "clique ou arraste para publicar tarefas";
 
     @Override
     public void create() {
@@ -109,14 +94,15 @@ public class IsoForgeGame extends ApplicationAdapter {
         GridMap map = world.getMap();
         renderer.centerOn(map.getWidth() / 2f, map.getHeight() / 2f);
 
-        batch = new SpriteBatch();
-        font = new BitmapFont();
+        hud = new GameHud(this);
 
         Gdx.gl.glEnable(GL20.GL_BLEND);
-        Gdx.input.setInputProcessor(buildInputProcessor());
+        // A interface ouve primeiro: um clique num botão não pode virar também
+        // um clique no mundo atrás dele.
+        Gdx.input.setInputProcessor(new InputMultiplexer(hud.getStage(), worldInput()));
     }
 
-    private InputAdapter buildInputProcessor() {
+    private InputAdapter worldInput() {
         return new InputAdapter() {
             @Override
             public boolean scrolled(float amountX, float amountY) {
@@ -161,33 +147,40 @@ public class IsoForgeGame extends ApplicationAdapter {
         };
     }
 
+    /**
+     * Atalhos de teclado. Cada um chama o mesmo método que o botão equivalente
+     * do HUD — o teclado é um caminho mais rápido para o mesmo comando, não um
+     * comando paralelo.
+     */
     private boolean handleKey(int keycode) {
         switch (keycode) {
             case Input.Keys.G:
                 renderer.setGridVisible(!renderer.isGridVisible());
                 return true;
+            case Input.Keys.F3:
+                hud.toggleDebug();
+                return true;
             case Input.Keys.B:
-                buildMode = !buildMode;
-                orderStatus = buildMode ? describeBuildMode() : "modo tarefa";
+                if (buildMode) {
+                    selectTaskMode();
+                } else {
+                    selectBuilding(selectedType);
+                }
                 return true;
             case Input.Keys.TAB:
-                selectedType = selectedType.next();
-                buildMode = true;
-                orderStatus = describeBuildMode();
+                selectBuilding(buildMode ? selectedType.next() : selectedType);
                 return true;
             case Input.Keys.SPACE:
-                paused = !paused;
-                orderStatus = paused ? "pausado" : "retomado";
+                setPaused(!paused);
                 return true;
             case Input.Keys.PERIOD:
-                timeScaleIndex = Math.min(timeScaleIndex + 1, TIME_SCALES.length - 1);
+                setTimeScaleIndex(timeScaleIndex + 1);
                 return true;
             case Input.Keys.COMMA:
-                timeScaleIndex = Math.max(timeScaleIndex - 1, 0);
+                setTimeScaleIndex(timeScaleIndex - 1);
                 return true;
             case Input.Keys.X:
-                world.cancelEverything();
-                orderStatus = "tudo cancelado";
+                cancelAllJobs();
                 return true;
             case Input.Keys.ESCAPE:
                 Gdx.app.exit();
@@ -197,13 +190,78 @@ public class IsoForgeGame extends ApplicationAdapter {
         }
     }
 
-    private String describeBuildMode() {
-        return "modo construcao: " + selectedType.getLabel()
-                + " (" + selectedType.getWoodCost() + " madeira)";
+    // ------------------------------------------------------------------
+    // HudActions — os comandos, vindos de botão ou de tecla
+    // ------------------------------------------------------------------
+
+    @Override
+    public void selectTaskMode() {
+        buildMode = false;
+        orderStatus = "clique ou arraste para publicar tarefas";
+    }
+
+    @Override
+    public void selectBuilding(BuildingType type) {
+        buildMode = true;
+        selectedType = type;
+        orderStatus = "clique para marcar " + type.getLabel().toLowerCase()
+                + " (" + type.getWoodCost() + " madeira)";
+    }
+
+    @Override
+    public void setPaused(boolean value) {
+        paused = value;
+        orderStatus = paused ? "pausado" : "retomado";
+    }
+
+    @Override
+    public void setTimeScaleIndex(int index) {
+        timeScaleIndex = Math.max(0, Math.min(index, TIME_SCALES.length - 1));
+    }
+
+    @Override
+    public void cancelAllJobs() {
+        world.cancelEverything();
+        orderStatus = "tudo cancelado";
+    }
+
+    @Override
+    public boolean isPaused() {
+        return paused;
+    }
+
+    @Override
+    public int getTimeScaleIndex() {
+        return timeScaleIndex;
+    }
+
+    @Override
+    public float[] getTimeScales() {
+        return TIME_SCALES.clone();
+    }
+
+    @Override
+    public BuildingType getSelectedBuilding() {
+        return buildMode ? selectedType : null;
+    }
+
+    @Override
+    public String getStatusMessage() {
+        return orderStatus;
+    }
+
+    @Override
+    public String getRendererName() {
+        return renderer.getName();
+    }
+
+    @Override
+    public float getZoom() {
+        return renderer.getZoom();
     }
 
     // ------------------------------------------------------------------
-    // Comando
+    // Comandos sobre o mapa
     // ------------------------------------------------------------------
 
     /**
@@ -257,7 +315,7 @@ public class IsoForgeGame extends ApplicationAdapter {
         // Se há árvore no tile e a publicação falhou, é porque ela já tem dono;
         // fora isso, o tile não é caminhável.
         if (world.standingTreeAt(x, y) != null) {
-            return "arvore (" + x + ", " + y + ") ja tem tarefa";
+            return "a arvore em (" + x + ", " + y + ") ja tem tarefa";
         }
         return "(" + x + ", " + y + ") nao e caminhavel";
     }
@@ -300,8 +358,8 @@ public class IsoForgeGame extends ApplicationAdapter {
 
     /**
      * Cancela a tarefa publicada naquele tile — e só ela. O cancelamento em
-     * massa continua existindo no {@code X}, mas ele deixou de ser a única
-     * saída: desfazer um clique errado não deveria custar a fila inteira.
+     * massa continua existindo, mas ele deixou de ser a única saída: desfazer
+     * um clique errado não deveria custar a fila inteira.
      */
     private void cancelAt(int x, int y) {
         orderStatus = world.cancelAt(x, y)
@@ -326,7 +384,8 @@ public class IsoForgeGame extends ApplicationAdapter {
         }
 
         renderer.render(world, cursor);
-        drawHud();
+        hud.update(world, cursor);
+        hud.draw(realDelta);
     }
 
     private void handlePan(float delta) {
@@ -353,10 +412,19 @@ public class IsoForgeGame extends ApplicationAdapter {
      * Pergunta ao renderizador que célula está sob o mouse e passa adiante o
      * que o jogador está prestes a fazer com ela. É o único caminho por onde a
      * tela vira grid — o jogo não sabe fazer essa conta, e não deve.
+     *
+     * <p>Com o ponteiro sobre um painel, não há célula alguma: o destaque é
+     * calculado todo frame, à revelia do input, e sem esta guarda o tile atrás
+     * da interface ficaria aceso enquanto o jogador mira num botão.
      */
     private void updateCursor() {
-        cursor.setOnMap(renderer.pickCell(world, Gdx.input.getX(), Gdx.input.getY(),
-                cursor.getCell()));
+        int pointerX = Gdx.input.getX();
+        int pointerY = Gdx.input.getY();
+
+        boolean overUi = hud.isPointerOverUi(pointerX, pointerY);
+        cursor.setOnMap(!overUi
+                && renderer.pickCell(world, pointerX, pointerY, cursor.getCell()));
+
         cursor.setBuildMode(buildMode);
         cursor.setBuildType(buildMode ? selectedType : null);
 
@@ -367,79 +435,15 @@ public class IsoForgeGame extends ApplicationAdapter {
         cursor.getDragCells().addAll(dragCells);
     }
 
-    // ------------------------------------------------------------------
-    // Interface
-    // ------------------------------------------------------------------
-
-    private void drawHud() {
-        GridMap map = world.getMap();
-        GridPoint2 cell = cursor.getCell();
-        String cellText = cursor.isOnMap()
-                ? cell.x + ", " + cell.y
-                        + "  nivel " + map.getLevel(cell.x, cell.y)
-                        + "  (" + map.get(cell.x, cell.y) + ")"
-                : "fora do mapa";
-
-        batch.setProjectionMatrix(hudMatrix);
-        batch.begin();
-        float top = Gdx.graphics.getHeight() - 10f;
-        font.draw(batch, "Tile: " + cellText, 12f, top);
-        font.draw(batch, "Unidades: " + world.getUnits().size
-                + "   ociosas: " + world.getIdleUnitCount(), 12f, top - 20f);
-
-        int starved = world.getJobBoard().getStarvedCount();
-        font.draw(batch, "Tarefas: " + world.getJobBoard().getTotalCount()
-                + "   sem dono: " + world.getJobBoard().getOpenCount()
-                + (starved > 0 ? "   sem madeira: " + starved : ""), 12f, top - 40f);
-
-        font.draw(batch, "Madeira: " + world.getStockpile().getWood()
-                + (world.getStockpile().getReservedWood() > 0
-                        ? " (" + world.getStockpile().getReservedWood() + " reservada)" : "")
-                + "   Construcoes: " + world.getBuildings().size, 12f, top - 60f);
-
-        font.draw(batch, "Hora: " + world.getDayCycle().getClockLabel()
-                + "   Tempo: " + (paused ? "pausado" : (int) TIME_SCALES[timeScaleIndex] + "x")
-                + "   Modo: " + (buildMode ? "construir " + selectedType.getLabel()
-                        + " (" + selectedType.getWoodCost() + " mad.)" : "tarefas"),
-                12f, top - 80f);
-
-        font.draw(batch, "Ordem: " + orderStatus, 12f, top - 100f);
-        font.draw(batch, String.format("Render: %s   Zoom: %.2f   FPS: %d",
-                renderer.getName(), renderer.getZoom(),
-                Gdx.graphics.getFramesPerSecond()), 12f, top - 120f);
-
-        font.draw(batch, "Esq: publicar (arraste p/ varias)   Dir: cancelar tarefa do tile   "
-                + "X: cancelar tudo   B: construir   TAB: trocar predio", 12f, top - 145f);
-        font.draw(batch, "SPACE: pausar   , .: velocidade   WASD: camera   "
-                + "Scroll: zoom   G: grade   ESC: sair", 12f, top - 163f);
-
-        drawUnitPanel(top);
-        batch.end();
-    }
-
-    /** Tabela à direita: uma linha por unidade, nome e o que está fazendo agora. */
-    private void drawUnitPanel(float top) {
-        float panelX = Gdx.graphics.getWidth() - 200f;
-        Array<Unit> units = world.getUnits();
-        font.draw(batch, "Unidades", panelX, top);
-        for (int i = 0; i < units.size; i++) {
-            Unit unit = units.get(i);
-            font.setColor(UNIT_COLORS[unit.getId() % UNIT_COLORS.length]);
-            font.draw(batch, unit.getName() + ": " + unit.describeState(), panelX, top - 20f - i * 20f);
-        }
-        font.setColor(Color.WHITE);
-    }
-
     @Override
     public void resize(int width, int height) {
         renderer.resize(width, height);
-        hudMatrix.setToOrtho2D(0f, 0f, width, height);
+        hud.resize(width, height);
     }
 
     @Override
     public void dispose() {
         renderer.dispose();
-        batch.dispose();
-        font.dispose();
+        hud.dispose();
     }
 }

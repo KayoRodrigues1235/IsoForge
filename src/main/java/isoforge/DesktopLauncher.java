@@ -18,7 +18,7 @@ public final class DesktopLauncher {
 
     public static void main(String[] args) {
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
-        config.setTitle("IsoForge — M2: arvores, corte e deposito");
+        config.setTitle("IsoForge");
         config.setWindowedMode(1280, 720);
         config.useVsync(true);
         config.setForegroundFPS(60);
