@@ -8,6 +8,7 @@ import isoforge.entity.JobBoard;
 import isoforge.entity.Stockpile;
 import isoforge.entity.Tree;
 import isoforge.entity.Unit;
+import isoforge.sim.World;
 import isoforge.world.GridMap;
 import isoforge.world.PathFinder;
 
@@ -17,79 +18,71 @@ import java.util.function.BooleanSupplier;
  * O laço do jogo rodando sem janela nenhuma.
  *
  * <p>Esta classe existe porque a simulação do IsoForge <b>não conhece um
- * pixel</b>: nada em {@code entity} ou {@code world} importa OpenGL, contexto
- * gráfico ou renderizador. Dá para plantar uma árvore, mandar cortá-la e ver a
- * lenha chegar ao depósito num processo sem tela. Se um dia um teste daqui
- * precisar abrir uma janela para passar, a separação vazou — e é justamente
- * isso que se quer descobrir cedo.
+ * pixel</b>: nada em {@link World}, {@code entity} ou {@code world} importa
+ * OpenGL, contexto gráfico ou renderizador. Dá para plantar uma árvore, mandar
+ * cortá-la e ver a lenha chegar ao depósito num processo sem tela. Se um dia um
+ * teste daqui precisar abrir uma janela para passar, a separação vazou — e é
+ * justamente isso que se quer descobrir cedo.
  *
- * <p>O corpo de {@link #tick} é deliberadamente o mesmo do passo de simulação
- * do jogo, na mesma ordem. Ele é, de propósito, um rascunho da classe
- * {@code World} que ainda vai ser extraída de {@code IsoForgeGame}: quando ela
- * existir, este arreio deve encolher para uma linha só.
+ * <p>Ela já foi maior. Na fase 0 esta classe montava o mapa, o quadro, o
+ * estoque e reimplementava o passo de simulação do jogo à mão, porque essas
+ * coisas moravam dentro de {@code IsoForgeGame} e não havia como alcançá-las de
+ * um teste. Depois que a fase 1 extraiu {@link World}, sobrou o que sempre
+ * deveria ter sido: um relógio de passo fixo e alguns atalhos de leitura. O
+ * encolhimento é o resultado que se queria — se o arreio tivesse continuado
+ * grande, a extração não teria valido.
  */
 final class ColonySimulation {
 
     /** Um frame a 60 Hz. Passo fixo: teste que depende de relógio real mente. */
     static final float FRAME = 1f / 60f;
 
-    final GridMap map;
-    final PathFinder finder;
-    final Stockpile stockpile;
-    final JobBoard board;
-    final GridPoint2 depot;
-
-    final Array<Unit> units = new Array<>();
-    final Array<Tree> trees = new Array<>();
-    final Array<Building> buildings = new Array<>();
-
-    private int nextTreeId;
-    private int nextBuildingId;
+    final World world;
 
     ColonySimulation(int depotX, int depotY) {
-        map = new GridMap(GridMap.DEFAULT_SIZE, GridMap.DEFAULT_SIZE);
-        finder = new PathFinder(map);
-        stockpile = new Stockpile();
-        depot = new GridPoint2(depotX, depotY);
-        board = new JobBoard(depot, stockpile);
+        world = new World(depotX, depotY);
+    }
+
+    // Atalhos de leitura, só para os testes não ficarem cheios de world.getX().
+
+    GridMap map() {
+        return world.getMap();
+    }
+
+    PathFinder finder() {
+        return world.getPathFinder();
+    }
+
+    Stockpile stockpile() {
+        return world.getStockpile();
+    }
+
+    JobBoard board() {
+        return world.getJobBoard();
+    }
+
+    Array<Unit> units() {
+        return world.getUnits();
+    }
+
+    Array<Building> buildings() {
+        return world.getBuildings();
+    }
+
+    GridPoint2 depot() {
+        return world.getDepot();
     }
 
     Unit addUnit(String name, int x, int y) {
-        Unit unit = new Unit(units.size, name, x, y, map);
-        units.add(unit);
-        return unit;
+        return world.addUnit(name, x, y);
     }
 
-    /** Planta uma árvore. Não publica tarefa: quem manda cortar é o teste. */
     Tree addTree(int x, int y) {
-        Tree tree = new Tree(nextTreeId++, x, y);
-        trees.add(tree);
-        return tree;
+        return world.addTree(x, y);
     }
 
-    /** Marca um canteiro e publica a obra, como faz o clique em modo construção. */
     Building markBuilding(int x, int y, BuildingType type) {
-        Building building = new Building(nextBuildingId++, x, y, type);
-        buildings.add(building);
-        board.postBuild(building);
-        return building;
-    }
-
-    /** Um frame: distribui tarefas, move todo mundo, recolhe o que terminou. */
-    void tick(float delta) {
-        board.assignPass(units, finder, map);
-        for (Unit unit : units) {
-            unit.update(delta, map, finder);
-        }
-        for (Tree tree : trees) {
-            tree.update(delta);
-        }
-        board.purgeCompleted();
-        for (int i = buildings.size - 1; i >= 0; i--) {
-            if (buildings.get(i).isCancelled()) {
-                buildings.removeIndex(i);
-            }
-        }
+        return world.placeBuilding(x, y, type);
     }
 
     /**
@@ -104,7 +97,7 @@ final class ColonySimulation {
     float runUntil(float limitSeconds, BooleanSupplier done) {
         float elapsed = 0f;
         while (elapsed < limitSeconds) {
-            tick(FRAME);
+            world.update(FRAME);
             elapsed += FRAME;
             if (done.getAsBoolean()) {
                 return elapsed;
@@ -119,18 +112,13 @@ final class ColonySimulation {
     }
 
     boolean everyoneIdle() {
-        for (Unit unit : units) {
-            if (!unit.isIdle()) {
-                return false;
-            }
-        }
-        return true;
+        return world.getIdleUnitCount() == world.getUnits().size;
     }
 
     /** Ergue paredes instantâneas, para testar o que acontece quando o caminho some. */
     void wallOff(int... xyPairs) {
         for (int i = 0; i < xyPairs.length; i += 2) {
-            map.setBlocked(xyPairs[i], xyPairs[i + 1], true);
+            world.getMap().setBlocked(xyPairs[i], xyPairs[i + 1], true);
         }
     }
 }

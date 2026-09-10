@@ -7,12 +7,23 @@ import com.badlogic.gdx.math.MathUtils;
  * Um punhado de partículas: lascas de madeira ao cortar, poeira ao terminar
  * uma obra. Enfeite puro — nada aqui afeta a simulação.
  *
- * <p><b>Elas vivem em pixels de mundo, já projetados</b>, e não em coordenadas
- * de grid. É a única parte do jogo que faz isso, e é intencional: uma lasca
- * não precisa saber em que tile está, só precisa cair na tela de um jeito que
- * convença. Em troca, elas são desenhadas por cima de tudo em vez de entrar na
- * ordenação por profundidade — some o efeito de uma lasca sumir atrás do
- * platô, mas não se paga a complexidade de reordenar partículas por frame.
+ * <p><b>As posições estão em coordenadas de simulação, não em pixels.</b>
+ * {@code x} e {@code z} são coordenadas de grid, no mesmo sistema contínuo em
+ * que uma unidade ocupa (3,4 · 7,8); {@code height} é altura em <i>níveis de
+ * terreno</i>, a mesma unidade de {@code GridMap.getLevel} e de
+ * {@code Unit.getVisualLevel}. Quem desenha é que projeta.
+ *
+ * <p>Isso não era assim: a primeira versão guardava pixels de tela já
+ * projetados, com gravidade em px/s². Funcionava, e teria custado uma
+ * reescrita no dia em que existisse um segundo renderizador — a lasca não
+ * precisa saber que o mundo é desenhado em losangos, e agora não sabe. Os dois
+ * eixos usam escalas diferentes (um passo horizontal é um tile, um passo
+ * vertical é um nível) porque é exatamente assim que o resto da simulação
+ * já media as duas coisas.
+ *
+ * <p>Continua valendo a limitação de sempre: partículas são desenhadas por
+ * cima de tudo, fora da ordenação por profundidade. Uma lasca não some atrás
+ * do platô. Reordená-las por frame custaria mais do que o efeito vale.
  *
  * <p>O armazenamento é um pool de arrays paralelos percorrido em anel: nada é
  * alocado depois do construtor, então o efeito pode disparar à vontade sem
@@ -22,13 +33,15 @@ public final class Particles {
 
     private static final int CAPACITY = 512;
 
-    /** Pixels por segundo ao quadrado. Negativo porque o Y do mundo cresce para cima. */
-    private static final float GRAVITY = -260f;
+    /** Níveis por segundo ao quadrado. Negativo porque a altura cresce para cima. */
+    private static final float GRAVITY = -16f;
 
     private final float[] x = new float[CAPACITY];
-    private final float[] y = new float[CAPACITY];
+    private final float[] height = new float[CAPACITY];
+    private final float[] z = new float[CAPACITY];
     private final float[] vx = new float[CAPACITY];
-    private final float[] vy = new float[CAPACITY];
+    private final float[] vHeight = new float[CAPACITY];
+    private final float[] vz = new float[CAPACITY];
     private final float[] life = new float[CAPACITY];
     private final float[] maxLife = new float[CAPACITY];
     private final float[] size = new float[CAPACITY];
@@ -39,24 +52,33 @@ public final class Particles {
     private int next;
 
     /**
-     * Espalha {@code count} partículas a partir de um ponto, com direção
-     * sorteada e um viés para cima — sem o viés a explosão parece um borrão
-     * simétrico em vez de algo saltando do chão.
+     * Espalha {@code count} partículas a partir de um ponto.
+     *
+     * @param spread velocidade horizontal, em tiles por segundo
+     * @param particleSize tamanho em frações da largura de um tile — nada de
+     *               pixels, pelo mesmo motivo das posições
+     * @param lift   velocidade vertical inicial, em níveis por segundo. É um
+     *               parâmetro separado do horizontal de propósito: sem um
+     *               impulso para cima a explosão vira um borrão simétrico em
+     *               vez de algo saltando do chão.
      */
-    public void burst(float worldX, float worldY, int count, float speed, float lifeSeconds,
+    public void burst(float gridX, float gridHeight, float gridZ, int count,
+                      float spread, float lift, float lifeSeconds,
                       float particleSize, Color color) {
         for (int i = 0; i < count; i++) {
             float angle = MathUtils.random(MathUtils.PI2);
-            float magnitude = speed * MathUtils.random(0.4f, 1f);
-            spawn(worldX, worldY,
-                    MathUtils.cos(angle) * magnitude,
-                    Math.abs(MathUtils.sin(angle)) * magnitude + speed * 0.5f,
+            float speed = spread * MathUtils.random(0.4f, 1f);
+            spawn(gridX, gridHeight, gridZ,
+                    MathUtils.cos(angle) * speed,
+                    lift * MathUtils.random(0.6f, 1.1f),
+                    MathUtils.sin(angle) * speed,
                     lifeSeconds * MathUtils.random(0.6f, 1f),
                     particleSize, color);
         }
     }
 
-    public void spawn(float worldX, float worldY, float velX, float velY,
+    public void spawn(float gridX, float gridHeight, float gridZ,
+                      float velX, float velHeight, float velZ,
                       float lifeSeconds, float particleSize, Color color) {
         // Anel: a partícula mais velha é sobrescrita quando o pool enche. Com
         // 512 posições isso só acontece em rajadas grandes, e perder a lasca
@@ -64,10 +86,12 @@ public final class Particles {
         int i = next;
         next = (next + 1) % CAPACITY;
 
-        x[i] = worldX;
-        y[i] = worldY;
+        x[i] = gridX;
+        height[i] = gridHeight;
+        z[i] = gridZ;
         vx[i] = velX;
-        vy[i] = velY;
+        vHeight[i] = velHeight;
+        vz[i] = velZ;
         life[i] = lifeSeconds;
         maxLife[i] = lifeSeconds;
         size[i] = particleSize;
@@ -82,9 +106,10 @@ public final class Particles {
                 continue;
             }
             life[i] -= delta;
-            vy[i] += GRAVITY * delta;
+            vHeight[i] += GRAVITY * delta;
             x[i] += vx[i] * delta;
-            y[i] += vy[i] * delta;
+            height[i] += vHeight[i] * delta;
+            z[i] += vz[i] * delta;
         }
     }
 
@@ -96,12 +121,19 @@ public final class Particles {
         return life[i] > 0f;
     }
 
+    /** Coordenada de grid no eixo X, contínua. */
     public float getX(int i) {
         return x[i];
     }
 
-    public float getY(int i) {
-        return y[i];
+    /** Altura em níveis de terreno acima do chão do tile. */
+    public float getHeight(int i) {
+        return height[i];
+    }
+
+    /** Coordenada de grid no eixo Y do mapa — chamada Z por ser a profundidade. */
+    public float getZ(int i) {
+        return z[i];
     }
 
     public float getSize(int i) {

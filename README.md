@@ -17,13 +17,20 @@ O adversário é uma IA disputando o mesmo mapa por território e recursos — a
 ```
 src/main/java/isoforge/
 ├── DesktopLauncher.java   # abre a janela, entrega o jogo pro backend LWJGL3
-├── IsoForgeGame.java      # o loop: câmera, input, picking, desenho, luz do dia
+├── IsoForgeGame.java      # input, relógio e HUD — o meio de campo, não o jogo
+├── sim/                   # a simulação: nada aqui conhece um pixel
+│   ├── World.java         #   a colônia inteira, com update(delta)
+│   └── DayCycle.java      #   que horas são, cor da luz e direção do sol
+├── render/                # a apresentação: nada aqui decide regra
+│   ├── WorldRenderer.java #   o contrato — desenho, câmera e picking
+│   ├── IsoShapeRenderer.java # a implementação 2.5D de geometria chapada
+│   └── Cursor.java        #   o que o jogador está apontando neste frame
 ├── world/                 # o mapa e sua matemática
 │   ├── IsoProjector.java  #   conversão grid ↔ tela, sem alocar nada por frame
 │   ├── GridMap.java       #   tiles, elevação, ocupação, o mapa de teste
 │   ├── TileType.java      #   grama, terra, pedra, água — e quem é andável
 │   └── PathFinder.java    #   A* ciente de elevação, penhascos e construções
-├── entity/                # quem habita o mapa — nada aqui conhece um pixel
+├── entity/                # quem habita o mapa
 │   ├── Unit.java          #   posição contínua, caminho, fase da tarefa atual
 │   ├── Job.java           #   uma tarefa e sua sequência de fases
 │   ├── JobBoard.java      #   o quadro — tarefas escolhem unidades, não o contrário
@@ -32,10 +39,14 @@ src/main/java/isoforge/
 │   ├── BuildingType.java  #   catálogo: custo, tempo e aparência
 │   └── Stockpile.java     #   estoque, com reserva separada do gasto
 └── fx/
-    └── Particles.java     #   lascas e poeira, em pool sem alocação por frame
+    └── Particles.java     #   lascas e poeira, em coordenadas de simulação
 ```
 
-A separação entre `world` (matemática pura, testável sem abrir janela nenhuma) e o resto é proposital: a projeção isométrica não sabe que existe um `ShapeRenderer`, então trocar a forma de desenhar no futuro não deveria doer. Pelo mesmo motivo `entity` não conhece pixel nenhum — a simulação inteira roda sem contexto OpenGL.
+A linha que divide o projeto passa entre `sim` e `render`. De um lado, a colônia: mapa, unidades, tarefas, estoque, o sol. Nada ali conhece câmera, contexto gráfico ou projeção isométrica — a simulação inteira roda num processo sem tela, e os testes provam isso a cada build. Do outro, o desenho: uma implementação de `WorldRenderer` que decide como aquele estado vira pixels.
+
+**Câmera e *picking* ficam do lado do desenho**, e não é arrumação. Descobrir o tile sob o cursor é, no 2.5D, uma varredura das faces de topo na ordem inversa da pintura; num renderizador 3D seria um raio de câmera contra a malha do terreno. As duas respondem à mesma pergunta e não têm uma linha em comum — se o jogo soubesse fazer essa conta, saberia fazer de um jeito só, e seria o errado para metade dos casos.
+
+O HUD é a exceção deliberada: desenhado por fora de qualquer renderizador, para sobreviver à troca do desenho do mundo sem ser tocado.
 
 ### O que uma tarefa é
 

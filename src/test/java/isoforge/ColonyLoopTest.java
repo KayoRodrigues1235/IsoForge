@@ -51,11 +51,11 @@ class ColonyLoopTest {
     /** Corta {@code count} árvores do bosque e espera a lenha chegar ao depósito. */
     private void harvest(int count) {
         for (int i = 0; i < count; i++) {
-            sim.board.postChop(sim.addTree(GROVE[i][0], GROVE[i][1]));
+            sim.board().postChop(sim.addTree(GROVE[i][0], GROVE[i][1]));
         }
         int target = count;
-        sim.runUntil(90f, () -> sim.stockpile.getWood() >= target);
-        assertEquals(target, sim.stockpile.getWood(),
+        sim.runUntil(90f, () -> sim.stockpile().getWood() >= target);
+        assertEquals(target, sim.stockpile().getWood(),
                 "a colheita de apoio precisa fechar antes do teste começar");
     }
 
@@ -70,15 +70,15 @@ class ColonyLoopTest {
         void corteEntregaLenha() {
             Tree perto = sim.addTree(3, 23);
             Tree longe = sim.addTree(2, 18);
-            assertNotNull(sim.board.postChop(perto));
-            assertNotNull(sim.board.postChop(longe));
+            assertNotNull(sim.board().postChop(perto));
+            assertNotNull(sim.board().postChop(longe));
 
-            float levou = sim.runUntil(60f, () -> sim.stockpile.getWood() >= 2);
+            float levou = sim.runUntil(60f, () -> sim.stockpile().getWood() >= 2);
 
-            assertEquals(2, sim.stockpile.getWood(), "as duas árvores viraram lenha");
+            assertEquals(2, sim.stockpile().getWood(), "as duas árvores viraram lenha");
             assertFalse(perto.isStanding(), "a árvore cortada não fica de pé");
             assertFalse(longe.isStanding());
-            assertEquals(0, sim.board.getTotalCount(), "o quadro esvazia ao terminar");
+            assertEquals(0, sim.board().getTotalCount(), "o quadro esvazia ao terminar");
             assertTrue(sim.everyoneIdle(), "ninguém fica preso na tarefa concluída");
             assertTrue(levou < 60f, "o corte não pode depender do teto de tempo");
         }
@@ -88,9 +88,9 @@ class ColonyLoopTest {
         void arvoreReservadaRecusaSegundaTarefa() {
             Tree tree = sim.addTree(3, 23);
 
-            assertNotNull(sim.board.postChop(tree), "a primeira tarefa é aceita");
-            assertNull(sim.board.postChop(tree), "a segunda é recusada enquanto a árvore está reservada");
-            assertEquals(1, sim.board.getTotalCount());
+            assertNotNull(sim.board().postChop(tree), "a primeira tarefa é aceita");
+            assertNull(sim.board().postChop(tree), "a segunda é recusada enquanto a árvore está reservada");
+            assertEquals(1, sim.board().getTotalCount());
         }
     }
 
@@ -104,14 +104,14 @@ class ColonyLoopTest {
         @DisplayName("sem madeira a obra espera, e não trava as tarefas seguintes")
         void obraSemMadeiraNaoBloqueiaAFila() {
             sim.markBuilding(SITE_X, SITE_Y, BuildingType.TORRE); // custa 5, temos 0
-            Job andar = sim.board.postMove(7, 25, sim.map);
+            Job andar = sim.board().postMove(7, 25, sim.map());
             assertNotNull(andar);
 
             sim.run(10f);
 
-            assertEquals(1, sim.board.getOpenCount(), "só a obra continua sem dono");
-            assertEquals(1, sim.board.getStarvedCount(), "e o motivo é falta de madeira");
-            assertEquals(0, sim.stockpile.getReservedWood(), "nada é reservado antes de haver estoque");
+            assertEquals(1, sim.board().getOpenCount(), "só a obra continua sem dono");
+            assertEquals(1, sim.board().getStarvedCount(), "e o motivo é falta de madeira");
+            assertEquals(0, sim.stockpile().getReservedWood(), "nada é reservado antes de haver estoque");
             assertTrue(andar.isDone(), "a tarefa publicada depois foi executada mesmo assim");
         }
 
@@ -127,20 +127,20 @@ class ColonyLoopTest {
             // depósito, então ela pode já ter retirado a madeira neste ponto.
             // Reservada na prateleira ou carregada nas costas, o efeito visível
             // é o mesmo: saiu de circulação.
-            assertEquals(0, sim.stockpile.getAvailableWood(), "as 2 madeiras saíram de circulação");
+            assertEquals(0, sim.stockpile().getAvailableWood(), "as 2 madeiras saíram de circulação");
 
-            Job job = sim.board.findByTarget(SITE_X, SITE_Y);
+            Job job = sim.board().findByTarget(SITE_X, SITE_Y);
             assertNotNull(job, "a obra ainda está no quadro");
-            for (var unit : sim.units) {
+            for (var unit : sim.units()) {
                 if (unit.getCurrentJob() == job) {
                     unit.stop();
                 }
             }
-            sim.board.cancel(job);
+            sim.board().cancel(job);
 
-            assertEquals(2, sim.stockpile.getWood(), "a madeira voltou ao depósito");
-            assertEquals(0, sim.stockpile.getReservedWood(), "e nada ficou preso na reserva");
-            assertEquals(2, sim.stockpile.getAvailableWood(), "está disponível de novo");
+            assertEquals(2, sim.stockpile().getWood(), "a madeira voltou ao depósito");
+            assertEquals(0, sim.stockpile().getReservedWood(), "e nada ficou preso na reserva");
+            assertEquals(2, sim.stockpile().getAvailableWood(), "está disponível de novo");
             assertTrue(cabana.isCancelled(), "o canteiro sai do mapa junto");
         }
 
@@ -154,14 +154,14 @@ class ColonyLoopTest {
 
             assertTrue(torre.isComplete(), "a torre ficou pronta em " + levou + "s");
             assertEquals(1f, torre.getProgress(), 1e-4f);
-            assertEquals(0, sim.stockpile.getWood(), "as 5 madeiras foram gastas");
-            assertEquals(0, sim.stockpile.getReservedWood(), "nada ficou reservado");
+            assertEquals(0, sim.stockpile().getWood(), "as 5 madeiras foram gastas");
+            assertEquals(0, sim.stockpile().getReservedWood(), "nada ficou reservado");
 
-            assertTrue(sim.map.isBlocked(SITE_X, SITE_Y), "o tile passou a ser ocupado");
-            assertFalse(sim.map.isWalkable(SITE_X, SITE_Y), "e deixou de ser caminhável");
-            assertFalse(sim.finder.findPath(5, 21, SITE_X, SITE_Y, new Array<>()),
+            assertTrue(sim.map().isBlocked(SITE_X, SITE_Y), "o tile passou a ser ocupado");
+            assertFalse(sim.map().isWalkable(SITE_X, SITE_Y), "e deixou de ser caminhável");
+            assertFalse(sim.finder().findPath(5, 21, SITE_X, SITE_Y, new Array<>()),
                     "o A* não aceita mais o tile da torre como destino");
-            assertEquals(0, sim.board.getTotalCount(), "o quadro esvaziou");
+            assertEquals(0, sim.board().getTotalCount(), "o quadro esvaziou");
             assertTrue(sim.everyoneIdle());
         }
     }
@@ -176,12 +176,12 @@ class ColonyLoopTest {
         @DisplayName("tarefa inalcançável fica no quadro sem prender ninguém")
         void tarefaInalcancavelNaoPrendeUnidade() {
             sim.wallOff(7, 22, 9, 22, 8, 23, 8, 21);
-            assertNotNull(sim.board.postMove(8, 22, sim.map), "o tile em si continua livre");
+            assertNotNull(sim.board().postMove(8, 22, sim.map()), "o tile em si continua livre");
 
             sim.run(10f);
 
             assertTrue(sim.everyoneIdle(), "ninguém sai andando para um lugar sem caminho");
-            assertEquals(1, sim.board.getOpenCount(), "a tarefa espera alguém em posição melhor");
+            assertEquals(1, sim.board().getOpenCount(), "a tarefa espera alguém em posição melhor");
         }
 
         @Test
@@ -201,10 +201,10 @@ class ColonyLoopTest {
 
             assertTrue(sim.everyoneIdle(), "a unidade desiste em vez de ficar presa");
             assertFalse(cabana.isComplete(), "a obra não foi erguida");
-            assertEquals(2, sim.stockpile.getWood(), "a madeira voltou inteira ao depósito");
-            assertEquals(0, sim.stockpile.getReservedWood());
-            assertEquals(0, sim.board.getTotalCount(), "a tarefa impossível saiu do quadro");
-            assertEquals(0, sim.buildings.size, "e o canteiro saiu do mapa");
+            assertEquals(2, sim.stockpile().getWood(), "a madeira voltou inteira ao depósito");
+            assertEquals(0, sim.stockpile().getReservedWood());
+            assertEquals(0, sim.board().getTotalCount(), "a tarefa impossível saiu do quadro");
+            assertEquals(0, sim.buildings().size, "e o canteiro saiu do mapa");
         }
     }
 }
