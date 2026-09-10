@@ -25,6 +25,12 @@ import isoforge.world.PathFinder;
  * parede do platô fica a um passo em linha reta e a vinte passos de caminhada.
  * Por isso a comparação usa o comprimento do caminho do A*.
  *
+ * <p><b>Tarefa sem material espera, mas não trava a fila.</b> Uma obra sem
+ * madeira disponível é pulada e as tarefas seguintes continuam sendo
+ * distribuídas — o jogador pode marcar dez cabanas com o estoque zerado e ver
+ * a colônia cortar lenha e erguê-las uma a uma, em vez de tudo parar na
+ * primeira impossível.
+ *
  * <p>A atribuição é gulosa, tarefa a tarefa, e não um casamento ótimo entre
  * todas as tarefas e todas as unidades. Guloso é o suficiente para um jogo e
  * evita trazer um algoritmo de atribuição bipartida para cá.
@@ -32,20 +38,28 @@ import isoforge.world.PathFinder;
 public final class JobBoard {
 
     private final Array<Job> jobs = new Array<>();
+    private final GridPoint2 depot = new GridPoint2();
+    private final Stockpile stockpile;
+
     private final GridPoint2 originCell = new GridPoint2();
     private final Array<GridPoint2> candidatePath = new Array<>();
     private final Array<GridPoint2> bestPath = new Array<>();
 
-    public void post(Job job) {
+    public JobBoard(GridPoint2 depot, Stockpile stockpile) {
+        this.depot.set(depot);
+        this.stockpile = stockpile;
+    }
+
+    private void post(Job job) {
         jobs.add(job);
     }
 
     /** Publica uma tarefa de deslocamento. Devolve null se o alvo é intransitável. */
     public Job postMove(int x, int y, GridMap map) {
-        if (!map.contains(x, y) || !map.get(x, y).isWalkable()) {
+        if (!map.isWalkable(x, y)) {
             return null;
         }
-        Job job = new Job(Job.Type.MOVE, x, y);
+        Job job = Job.move(x, y);
         post(job);
         return job;
     }
@@ -55,12 +69,22 @@ public final class JobBoard {
      * reservada por outra tarefa ou já tiver caído — nesses casos o quadro
      * não duplica trabalho na mesma árvore.
      */
-    public Job postChop(Tree tree, int depotX, int depotY) {
+    public Job postChop(Tree tree) {
         if (tree == null || !tree.isAvailable()) {
             return null;
         }
         tree.reserve();
-        Job job = Job.chop(tree, depotX, depotY);
+        Job job = Job.chop(tree, depot, stockpile);
+        post(job);
+        return job;
+    }
+
+    /**
+     * Publica uma obra. <b>Não</b> exige que a madeira exista agora: o canteiro
+     * fica marcado no mapa e a tarefa espera no quadro até o estoque dar conta.
+     */
+    public Job postBuild(Building building) {
+        Job job = Job.build(building, depot, stockpile);
         post(job);
         return job;
     }
@@ -85,7 +109,14 @@ public final class JobBoard {
             if (!job.isOpen()) {
                 continue;
             }
-            GridPoint2 target = job.getTarget();
+            // Checagem barata antes do A*: obra sem madeira livre nem vale a
+            // busca de caminho. A reserva de verdade só sai depois, quando já
+            // existe uma unidade para receber a tarefa.
+            if (job.getWoodCost() > stockpile.getAvailableWood()) {
+                continue;
+            }
+
+            GridPoint2 destination = job.getDestination();
 
             Unit best = null;
             int bestSteps = Integer.MAX_VALUE;
@@ -95,7 +126,8 @@ public final class JobBoard {
                     continue;
                 }
                 unit.getCell(originCell);
-                if (!finder.findPath(originCell.x, originCell.y, target.x, target.y, candidatePath)) {
+                if (!finder.findPath(originCell.x, originCell.y,
+                        destination.x, destination.y, candidatePath)) {
                     continue;
                 }
                 if (candidatePath.size < bestSteps) {
@@ -106,7 +138,7 @@ public final class JobBoard {
                 }
             }
 
-            if (best != null) {
+            if (best != null && job.reserveMaterial()) {
                 job.claim();
                 best.assign(job, bestPath, map);
                 assigned++;
@@ -114,6 +146,27 @@ public final class JobBoard {
         }
 
         return assigned;
+    }
+
+    /** A tarefa publicada naquele tile, se houver. Usada pelo cancelamento pontual. */
+    public Job findByTarget(int x, int y) {
+        for (Job job : jobs) {
+            GridPoint2 target = job.getTarget();
+            if (target.x == x && target.y == y && !job.isDone()) {
+                return job;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Cancela uma tarefa, desfazendo as reservas dela. A unidade que estiver
+     * executando precisa ser parada pelo chamador — o quadro não conhece quem
+     * pegou o quê.
+     */
+    public void cancel(Job job) {
+        job.abort();
+        jobs.removeValue(job, true);
     }
 
     /** Pinta no mask as células de tarefas que ainda não têm dono. */
@@ -135,9 +188,9 @@ public final class JobBoard {
         }
     }
 
-    /** Esvazia o quadro. As unidades já em trabalho precisam ser paradas à parte. */
-    public void clear() {
-        jobs.clear();
+    /** Todas as tarefas do quadro, para o chamador iterar ao cancelar em massa. */
+    public Array<Job> getJobs() {
+        return jobs;
     }
 
     public int getOpenCount() {
@@ -148,6 +201,17 @@ public final class JobBoard {
             }
         }
         return open;
+    }
+
+    /** Obras paradas à espera de madeira — o número que explica "por que ninguém foi". */
+    public int getStarvedCount() {
+        int starved = 0;
+        for (Job job : jobs) {
+            if (job.isOpen() && job.getWoodCost() > stockpile.getAvailableWood()) {
+                starved++;
+            }
+        }
+        return starved;
     }
 
     public int getTotalCount() {

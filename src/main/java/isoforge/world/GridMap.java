@@ -39,12 +39,14 @@ public final class GridMap {
     private final int height;
     private final TileType[] tiles;
     private final int[] levels;
+    private final boolean[] blocked;
 
     public GridMap(int width, int height) {
         this.width = width;
         this.height = height;
         this.tiles = new TileType[width * height];
         this.levels = new int[width * height];
+        this.blocked = new boolean[width * height];
         generatePlaceholder();
     }
 
@@ -112,6 +114,31 @@ public final class GridMap {
     public void set(int x, int y, TileType type) {
         requireInside(x, y);
         tiles[y * width + x] = type;
+    }
+
+    /**
+     * Se dá para pisar na célula: terreno caminhável <b>e</b> livre de
+     * construção. É este método, e não {@code get(x, y).isWalkable()}, que o
+     * A* consulta — o tipo de terreno é o que o mapa nasceu sendo, e o bloqueio
+     * é o que a colônia fez dele depois.
+     */
+    public boolean isWalkable(int x, int y) {
+        if (!contains(x, y)) {
+            return false;
+        }
+        int index = y * width + x;
+        return tiles[index].isWalkable() && !blocked[index];
+    }
+
+    /** Marca a célula como ocupada por uma construção. */
+    public void setBlocked(int x, int y, boolean value) {
+        requireInside(x, y);
+        blocked[y * width + x] = value;
+    }
+
+    public boolean isBlocked(int x, int y) {
+        requireInside(x, y);
+        return blocked[y * width + x];
     }
 
     /** Nível de terreno da célula. 0 é o chão. */

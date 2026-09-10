@@ -27,11 +27,17 @@ import isoforge.world.PathFinder;
  * <p>O nível visual é interpolado ao longo de cada trecho. Sem isso a unidade
  * "teleporta" verticalmente ao pisar na rampa, um degrau inteiro de uma vez.
  *
- * <p><b>Chegar nem sempre termina a tarefa.</b> Numa {@code MOVE}, sim; numa
- * {@code CHOP}, chegar à árvore só inicia o corte. É por isso que o {@link
- * PathFinder} entra em {@link #update}: quando o cronômetro de corte zera, a
- * própria unidade calcula o caminho de volta ao depósito, sem precisar que o
- * jogo pergunte a cada frame se alguém terminou de trabalhar.
+ * <p><b>Chegar quase nunca termina a tarefa.</b> Só a {@code MOVE} acaba ao
+ * chegar; nas outras, cada chegada é o fim de uma fase e o começo da próxima,
+ * que pode exigir um caminho novo (da árvore ao depósito, do depósito à obra).
+ * Por isso o {@link PathFinder} entra em {@link #update}: a unidade se rota
+ * sozinha entre as fases, sem o jogo precisar perguntar a cada frame quem
+ * terminou o quê.
+ *
+ * <p>Uma consequência sutil e útil: quando a tarefa não tem caminho para a
+ * fase seguinte (o jogador muraram o canteiro, por exemplo), a unidade
+ * <b>aborta</b> em vez de ficar presa. Tarefa impossível volta a ser tarefa
+ * inexistente, e o material reservado é devolvido.
  */
 public final class Unit {
 
@@ -42,7 +48,8 @@ public final class Unit {
     private final String name;
     private final Vector2 position = new Vector2();
     private final Array<GridPoint2> path = new Array<>();
-    private final Array<GridPoint2> returnPathScratch = new Array<>();
+    private final Array<GridPoint2> routeScratch = new Array<>();
+    private final GridPoint2 cellScratch = new GridPoint2();
     private int pathIndex;
 
     private Job currentJob;
@@ -81,20 +88,12 @@ public final class Unit {
         }
     }
 
-    /** Abandona tarefa e caminho. Usado quando o jogador cancela tudo. */
+    /**
+     * Larga a tarefa atual e o caminho. O desfazer das reservas é do {@link
+     * Job#abort()}, chamado por quem cancelou — a unidade só solta a mão.
+     */
     public void stop() {
-        if (currentJob != null) {
-            // Se era um corte ainda em andamento, a árvore não chegou a cair —
-            // libera a reserva para outra tarefa poder mirar nela de novo.
-            if (currentJob.getType() == Job.Type.CHOP) {
-                Tree tree = currentJob.getTree();
-                if (tree != null && !tree.isChopped()) {
-                    tree.release();
-                }
-            }
-            currentJob.complete();
-            currentJob = null;
-        }
+        currentJob = null;
         path.clear();
         pathIndex = 0;
     }
@@ -121,24 +120,23 @@ public final class Unit {
         if (isMoving()) {
             advance(delta, map);
             if (!isMoving() && currentJob != null) {
-                onArrival();
+                onArrival(map, finder);
             }
             return;
         }
-
-        if (currentJob != null && currentJob.getPhase() == Job.Phase.WORKING) {
-            if (currentJob.tickWork(delta)) {
-                GridPoint2 target = currentJob.getTarget();
-                GridPoint2 depot = currentJob.getDepot();
-                if (finder.findPath(target.x, target.y, depot.x, depot.y, returnPathScratch)) {
-                    setPath(returnPathScratch, map);
-                } else {
-                    // Sem caminho de volta (não deveria acontecer no mapa
-                    // atual): encerra em vez de deixar a unidade presa na árvore.
-                    finishJob();
-                }
-            }
+        if (currentJob == null) {
+            return;
         }
+        if (currentJob.getPhase() == Job.Phase.WORKING) {
+            if (currentJob.tickWork(delta, map)) {
+                afterPhase(map, finder);
+            }
+            return;
+        }
+        // Parada numa fase de deslocamento: o destino é onde ela já está. Vale
+        // para o clique no próprio tile da unidade e para a obra marcada em
+        // cima do depósito — casos que, sem isto, deixariam a tarefa eterna.
+        onArrival(map, finder);
     }
 
     private void advance(float delta, GridMap map) {
@@ -169,11 +167,47 @@ public final class Unit {
         visualLevel = MathUtils.lerp(segmentFromLevel, segmentToLevel, progress);
     }
 
-    private void onArrival() {
+    private void onArrival(GridMap map, PathFinder finder) {
         currentJob.arrive();
+        afterPhase(map, finder);
+    }
+
+    /** Fase encerrada: ou a tarefa acabou, ou há um novo destino para andar. */
+    private void afterPhase(GridMap map, PathFinder finder) {
         if (currentJob.isDone()) {
             finishJob();
+            return;
         }
+        if (currentJob.getPhase() == Job.Phase.WORKING) {
+            return; // trabalho parado: nada a percorrer
+        }
+        routeToDestination(map, finder);
+    }
+
+    private void routeToDestination(GridMap map, PathFinder finder) {
+        GridPoint2 destination = currentJob.getDestination();
+        getCell(cellScratch);
+
+        if (!finder.findPath(cellScratch.x, cellScratch.y,
+                destination.x, destination.y, routeScratch)) {
+            abandonJob();
+            return;
+        }
+        if (routeScratch.size == 0) {
+            onArrival(map, finder); // já está lá; a chegada é imediata
+            return;
+        }
+        setPath(routeScratch, map);
+    }
+
+    /** Desiste da tarefa devolvendo o que ela tinha reservado. */
+    private void abandonJob() {
+        if (currentJob != null) {
+            currentJob.abort();
+            currentJob = null;
+        }
+        path.clear();
+        pathIndex = 0;
     }
 
     /** Célula em que a unidade está (a mais próxima, se estiver entre duas). */
@@ -181,22 +215,40 @@ public final class Unit {
         return out.set(Math.round(position.x), Math.round(position.y));
     }
 
+    /** Está com as mãos ocupadas — o desenho põe uma carga sobre a cabeça. */
+    public boolean isCarrying() {
+        return currentJob != null && currentJob.isCarrying();
+    }
+
     /** Rótulo curto do que a unidade está fazendo agora, para o painel lateral. */
     public String describeState() {
         if (currentJob == null) {
             return "Ocioso";
         }
-        if (currentJob.getType() == Job.Type.CHOP) {
-            switch (currentJob.getPhase()) {
-                case WORKING:
-                    return "Cortando";
-                case TO_DEPOT:
-                    return "Levando lenha";
-                default:
-                    return "Andando";
-            }
+        switch (currentJob.getType()) {
+            case CHOP:
+                switch (currentJob.getPhase()) {
+                    case WORKING:
+                        return "Cortando";
+                    case TO_DEPOT:
+                        return "Levando lenha";
+                    default:
+                        return "Andando";
+                }
+            case BUILD:
+                switch (currentJob.getPhase()) {
+                    case TO_SUPPLY:
+                        return "Buscando madeira";
+                    case TO_TARGET:
+                        return "Levando material";
+                    case WORKING:
+                        return "Construindo";
+                    default:
+                        return "Andando";
+                }
+            default:
+                return "Andando";
         }
-        return "Andando";
     }
 
     public int getId() {

@@ -94,7 +94,7 @@ public final class PathFinder {
         if (!map.contains(startX, startY) || !map.contains(goalX, goalY)) {
             return false;
         }
-        if (!map.get(goalX, goalY).isWalkable()) {
+        if (!map.isWalkable(goalX, goalY)) {
             return false;
         }
         if (startX == goalX && startY == goalY) {
@@ -139,7 +139,7 @@ public final class PathFinder {
                 }
 
                 int neighbor = index(nx, ny);
-                if (closed[neighbor] || !map.get(nx, ny).isWalkable()) {
+                if (closed[neighbor] || !map.isWalkable(nx, ny)) {
                     continue;
                 }
 
