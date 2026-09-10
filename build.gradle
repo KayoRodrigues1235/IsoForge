@@ -12,6 +12,7 @@ repositories {
 
 ext {
     gdxVersion = '1.13.1'
+    junitVersion = '5.11.4'
 }
 
 dependencies {
@@ -24,6 +25,21 @@ dependencies {
     // Bibliotecas nativas (.so/.dll/.dylib) que o backend carrega em runtime.
     // É runtimeOnly porque nada no código-fonte importa essas classes.
     runtimeOnly "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+
+    // Os testes não precisam de backend nem de natives: `entity` e `world` não
+    // conhecem OpenGL, então a simulação inteira roda sem abrir janela. É essa
+    // separação que torna o jogo testável, e o teste é que a mantém honesta.
+    testImplementation platform("org.junit:junit-bom:$junitVersion")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
 }
 
 java {

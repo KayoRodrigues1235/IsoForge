@@ -23,7 +23,7 @@ src/main/java/isoforge/
 │   ├── GridMap.java       #   tiles, elevação, ocupação, o mapa de teste
 │   ├── TileType.java      #   grama, terra, pedra, água — e quem é andável
 │   └── PathFinder.java    #   A* ciente de elevação, penhascos e construções
-├── entity/                # quem habita o mapa
+├── entity/                # quem habita o mapa — nada aqui conhece um pixel
 │   ├── Unit.java          #   posição contínua, caminho, fase da tarefa atual
 │   ├── Job.java           #   uma tarefa e sua sequência de fases
 │   ├── JobBoard.java      #   o quadro — tarefas escolhem unidades, não o contrário
@@ -48,6 +48,16 @@ BUILD   buscar madeira no depósito → levar ao canteiro → erguer → fim
 ```
 
 Chegar quase nunca termina a tarefa: cada chegada fecha uma fase e abre a próxima, que pode exigir um caminho novo. A unidade se rota sozinha entre as fases. Acrescentar um tipo de tarefa é acrescentar uma sequência, não um caso especial no loop principal.
+
+## Testes
+
+A simulação inteira roda sem abrir janela — `entity` e `world` não importam OpenGL, então dá para plantar uma árvore, mandar cortá-la e ver a lenha chegar ao depósito num processo sem tela:
+
+```bash
+./gradlew test
+```
+
+Os testes cobrem o que dá errado devagar: reserva de material que não volta, tarefa que fica sem dono para sempre, unidade que trava esperando um caminho que não existe. São bugs que não aparecem na tela no dia em que são escritos — aparecem numa partida longa, semanas depois, como "sumiu madeira". Se um dia um teste daqui precisar de contexto gráfico para passar, a separação entre simulação e desenho vazou.
 
 ## Rodando
 
