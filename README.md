@@ -38,6 +38,8 @@ src/main/java/isoforge/
 │   ├── Building.java      #   canteiro → obra em progresso → obstáculo
 │   ├── BuildingType.java  #   catálogo: custo, tempo e aparência
 │   └── Stockpile.java     #   estoque, com reserva separada do gasto
+├── assets/                # o que o jogo carrega de disco
+│   └── Assets.java        #   AssetManager: fila, progresso, fontes do FreeType
 ├── ui/                    # a interface, por fora de qualquer renderizador
 │   ├── GameHud.java       #   recursos, tempo, paleta de construção, unidades
 │   ├── HudActions.java    #   o contrato entre a interface e o jogo
@@ -73,6 +75,14 @@ A simulação inteira roda sem abrir janela — `entity` e `world` não importam
 ```
 
 Os testes cobrem o que dá errado devagar: reserva de material que não volta, tarefa que fica sem dono para sempre, unidade que trava esperando um caminho que não existe. São bugs que não aparecem na tela no dia em que são escritos — aparecem numa partida longa, semanas depois, como "sumiu madeira". Se um dia um teste daqui precisar de contexto gráfico para passar, a separação entre simulação e desenho vazou.
+
+## Assets
+
+A pasta `assets/` entra no build como **recurso**, não como diretório de trabalho da task `run` — assim `Gdx.files.internal` acha os arquivos tanto no `./gradlew run` quanto num jar empacotado, sem o jogo precisar saber de qual dos dois foi iniciado.
+
+O carregamento passa por um `AssetManager` assíncrono, coberto por uma tela com uma barra e nenhuma palavra — o que está carregando *é a fonte*, então não há com que escrever "Carregando" até terminar. A estrutura é assumidamente maior do que a carga de hoje exige: ela existe para as texturas de terreno e os *decals* que vêm depois, e a diferença entre "some um frame" e "a janela trava dois segundos" é tê-la antes de precisar.
+
+A fonte é gerada pelo `gdx-freetype` no tamanho exato de cada uso, e não escalada a partir de um tamanho só. Título, corpo e legenda saem do mesmo `.ttf` sem nenhum ser uma versão macia do outro. Ver `assets/fonts/README.md` para a licença e para por que a escolha é placeholder.
 
 ## Rodando
 

@@ -5,9 +5,14 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.InputAdapter;
 import com.badlogic.gdx.InputMultiplexer;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.GridPoint2;
+import com.badlogic.gdx.math.Matrix4;
+import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.Array;
+import isoforge.assets.Assets;
 import isoforge.entity.BuildingType;
 import isoforge.render.Cursor;
 import isoforge.render.IsoShapeRenderer;
@@ -63,6 +68,15 @@ public class IsoForgeGame extends ApplicationAdapter implements HudActions {
     /** Multiplicadores de velocidade da simulação. */
     private static final float[] TIME_SCALES = {1f, 2f, 4f};
 
+    private static final Color LOADING_BACKGROUND = new Color(0.09f, 0.10f, 0.13f, 1f);
+    private static final Color LOADING_TRACK = new Color(1f, 1f, 1f, 0.12f);
+    private static final Color LOADING_FILL = new Color(0.95f, 0.75f, 0.25f, 1f);
+
+    private Assets assets;
+    private ShapeRenderer loadingShapes;
+    private final Matrix4 loadingMatrix = new Matrix4();
+    private boolean ready;
+
     private World world;
     private WorldRenderer renderer;
     private GameHud hud;
@@ -79,8 +93,20 @@ public class IsoForgeGame extends ApplicationAdapter implements HudActions {
 
     private String orderStatus = "clique ou arraste para publicar tarefas";
 
+    /**
+     * Só o que é preciso para mostrar a tela de carregamento. O mundo, o
+     * renderizador e o HUD nascem em {@link #finishLoading()}, porque o HUD
+     * depende de fontes que ainda estão sendo geradas.
+     */
     @Override
     public void create() {
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        loadingShapes = new ShapeRenderer();
+        assets = new Assets();
+        assets.queue();
+    }
+
+    private void finishLoading() {
         world = new World(DEPOT_X, DEPOT_Y);
         for (int i = 0; i < UNIT_SPAWNS.length; i++) {
             world.addUnit(UNIT_NAMES[i % UNIT_NAMES.length], UNIT_SPAWNS[i][0], UNIT_SPAWNS[i][1]);
@@ -94,12 +120,19 @@ public class IsoForgeGame extends ApplicationAdapter implements HudActions {
         GridMap map = world.getMap();
         renderer.centerOn(map.getWidth() / 2f, map.getHeight() / 2f);
 
-        hud = new GameHud(this);
+        // Redimensionar à mão, aqui: o libGDX dispara resize() na abertura da
+        // janela, que acontece antes destes objetos existirem, e não dispara de
+        // novo até o jogador mexer na janela. Sem isto o renderizador nasce com
+        // viewport de tamanho zero — e como o HUD desenha no viewport que o
+        // mundo deixou aplicado, a tela inteira fica vazia.
+        hud = new GameHud(this, assets);
+        renderer.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        hud.resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 
-        Gdx.gl.glEnable(GL20.GL_BLEND);
         // A interface ouve primeiro: um clique num botão não pode virar também
         // um clique no mundo atrás dele.
         Gdx.input.setInputProcessor(new InputMultiplexer(hud.getStage(), worldInput()));
+        ready = true;
     }
 
     private InputAdapter worldInput() {
@@ -315,9 +348,9 @@ public class IsoForgeGame extends ApplicationAdapter implements HudActions {
         // Se há árvore no tile e a publicação falhou, é porque ela já tem dono;
         // fora isso, o tile não é caminhável.
         if (world.standingTreeAt(x, y) != null) {
-            return "a arvore em (" + x + ", " + y + ") ja tem tarefa";
+            return "a árvore em (" + x + ", " + y + ") já tem tarefa";
         }
-        return "(" + x + ", " + y + ") nao e caminhavel";
+        return "(" + x + ", " + y + ") não é caminhável";
     }
 
     private void placeBuilding(int x, int y) {
@@ -342,15 +375,15 @@ public class IsoForgeGame extends ApplicationAdapter implements HudActions {
             case OUT_OF_MAP:
                 return "fora do mapa";
             case TERRAIN:
-                return "nao da para construir em " + world.getMap().get(x, y);
+                return "não dá para construir em " + world.getMap().get(x, y);
             case OCCUPIED:
-                return "ja tem construcao em (" + x + ", " + y + ")";
+                return "já tem construção em (" + x + ", " + y + ")";
             case DEPOT:
-                return "o deposito ocupa esse tile";
+                return "o depósito ocupa esse tile";
             case TREE:
-                return "tem arvore em (" + x + ", " + y + ") — corte primeiro";
+                return "tem árvore em (" + x + ", " + y + ") — corte primeiro";
             case SITE:
-                return "ja tem obra marcada ai";
+                return "já tem obra marcada aí";
             default:
                 return "";
         }
@@ -373,6 +406,15 @@ public class IsoForgeGame extends ApplicationAdapter implements HudActions {
 
     @Override
     public void render() {
+        if (!ready) {
+            boolean done = assets.update();
+            drawLoading(assets.getProgress());
+            if (done) {
+                finishLoading();
+            }
+            return;
+        }
+
         float realDelta = Gdx.graphics.getDeltaTime();
         float simDelta = paused ? 0f : realDelta * TIME_SCALES[timeScaleIndex];
 
@@ -386,6 +428,34 @@ public class IsoForgeGame extends ApplicationAdapter implements HudActions {
         renderer.render(world, cursor);
         hud.update(world, cursor);
         hud.draw(realDelta);
+    }
+
+    /**
+     * A tela de carregamento: uma barra, e nenhuma palavra.
+     *
+     * <p>Não é minimalismo — é que o que está carregando <i>é a fonte</i>. Não
+     * há com que escrever "Carregando" até o carregamento terminar, e uma barra
+     * diz a mesma coisa sem precisar de tipografia nenhuma.
+     */
+    private void drawLoading(float progress) {
+        ScreenUtils.clear(LOADING_BACKGROUND);
+
+        float width = Gdx.graphics.getWidth();
+        float height = Gdx.graphics.getHeight();
+        loadingMatrix.setToOrtho2D(0f, 0f, width, height);
+        loadingShapes.setProjectionMatrix(loadingMatrix);
+
+        float barWidth = Math.min(320f, width * 0.35f);
+        float barHeight = 3f;
+        float x = (width - barWidth) * 0.5f;
+        float y = height * 0.5f;
+
+        loadingShapes.begin(ShapeRenderer.ShapeType.Filled);
+        loadingShapes.setColor(LOADING_TRACK);
+        loadingShapes.rect(x, y, barWidth, barHeight);
+        loadingShapes.setColor(LOADING_FILL);
+        loadingShapes.rect(x, y, barWidth * progress, barHeight);
+        loadingShapes.end();
     }
 
     private void handlePan(float delta) {
@@ -437,13 +507,24 @@ public class IsoForgeGame extends ApplicationAdapter implements HudActions {
 
     @Override
     public void resize(int width, int height) {
+        // Chega antes de finishLoading() na primeira vez: durante o
+        // carregamento não há renderizador nem HUD para redimensionar.
+        if (!ready) {
+            return;
+        }
         renderer.resize(width, height);
         hud.resize(width, height);
     }
 
     @Override
     public void dispose() {
-        renderer.dispose();
-        hud.dispose();
+        if (renderer != null) {
+            renderer.dispose();
+        }
+        if (hud != null) {
+            hud.dispose();
+        }
+        loadingShapes.dispose();
+        assets.dispose();
     }
 }

@@ -26,6 +26,12 @@ dependencies {
     // É runtimeOnly porque nada no código-fonte importa essas classes.
     runtimeOnly "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
 
+    // FreeType: gera bitmaps de fonte em tempo de execução a partir de um .ttf.
+    // É o que permite um arquivo só atender título, corpo e legenda em tamanhos
+    // diferentes, sem nenhum ser uma versão escalada (e macia) do outro.
+    implementation "com.badlogicgames.gdx:gdx-freetype:$gdxVersion"
+    runtimeOnly "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-desktop"
+
     // Os testes não precisam de backend nem de natives: `entity` e `world` não
     // conhecem OpenGL, então a simulação inteira roda sem abrir janela. É essa
     // separação que torna o jogo testável, e o teste é que a mantém honesta.
@@ -39,6 +45,18 @@ test {
     testLogging {
         events 'passed', 'skipped', 'failed'
         exceptionFormat 'full'
+    }
+}
+
+// A pasta assets/ entra como recurso, e não como diretório de trabalho da task
+// `run`. A diferença importa: assim `Gdx.files.internal` acha os arquivos tanto
+// no `gradlew run` quanto num jar empacotado, sem o jogo precisar saber de qual
+// dos dois foi iniciado.
+sourceSets {
+    main {
+        resources {
+            srcDirs += ['assets']
+        }
     }
 }
 

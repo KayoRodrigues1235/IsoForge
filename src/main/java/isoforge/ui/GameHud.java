@@ -16,6 +16,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Disposable;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
+import isoforge.assets.Assets;
 import isoforge.entity.BuildingType;
 import isoforge.entity.Unit;
 import isoforge.render.Cursor;
@@ -78,9 +79,9 @@ public final class GameHud implements Disposable {
     private final Table debugPanel;
     private final Label debugLabel;
 
-    public GameHud(HudActions actions) {
+    public GameHud(HudActions actions, Assets assets) {
         this.actions = actions;
-        this.skin = ProceduralSkin.build();
+        this.skin = ProceduralSkin.build(assets);
         this.stage = new Stage(new ScreenViewport());
 
         woodValue = new Label("0", skin, "title");
@@ -366,7 +367,7 @@ public final class GameHud implements Disposable {
         GridMap map = world.getMap();
         GridPoint2 cell = cursor.getCell();
         String tile = cursor.isOnMap()
-                ? cell.x + ", " + cell.y + "  nivel " + map.getLevel(cell.x, cell.y)
+                ? cell.x + ", " + cell.y + "  nível " + map.getLevel(cell.x, cell.y)
                         + "  " + map.get(cell.x, cell.y)
                         + (map.isBlocked(cell.x, cell.y) ? "  [ocupado]" : "")
                 : "fora do mapa";
@@ -375,9 +376,9 @@ public final class GameHud implements Disposable {
                 + "\nRender: " + actions.getRendererName()
                 + String.format("   Zoom: %.2f   FPS: %d",
                         actions.getZoom(), Gdx.graphics.getFramesPerSecond())
-                + "\nArraste: publicar varias   Dir: cancelar tarefa do tile"
-                + "\nB / TAB: construir   SPACE: pausar   , .: velocidade"
-                + "\nWASD: camera   Scroll: zoom   G: grade   F3: este painel";
+                + "\nArraste: publicar várias   Direito: cancelar a tarefa do tile"
+                + "\nB / TAB: construir   Espaço: pausar   , .: velocidade"
+                + "\nWASD: câmera   Scroll: zoom   G: grade   F3: este painel";
     }
 
     public void toggleDebug() {
@@ -408,6 +409,10 @@ public final class GameHud implements Disposable {
     }
 
     public void draw(float realDelta) {
+        // O renderizador do mundo acabou de aplicar o viewport dele. A interface
+        // tem o seu próprio e precisa reivindicá-lo antes de desenhar, senão
+        // herda a câmera de quem desenhou por último.
+        stage.getViewport().apply();
         stage.act(realDelta);
         stage.draw();
     }
@@ -419,6 +424,8 @@ public final class GameHud implements Disposable {
     @Override
     public void dispose() {
         stage.dispose();
+        // A skin descarta as texturas que ela mesma gerou. As fontes são do
+        // AssetManager e não passam por aqui.
         skin.dispose();
     }
 }

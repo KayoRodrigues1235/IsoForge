@@ -10,6 +10,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.Label;
 import com.badlogic.gdx.scenes.scene2d.ui.Skin;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
+import isoforge.assets.Assets;
 
 /**
  * A skin do HUD, desenhada em código em vez de carregada de arquivo.
@@ -27,10 +28,10 @@ import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable;
  * mexe em uma linha de layout, porque o layout fala com nomes de estilo, não
  * com arquivos.
  *
- * <p>A limitação honesta: a fonte padrão do libGDX é bitmap num tamanho só, e
- * escalar bitmap não é de graça. Em 1,35× o título fica levemente macio, o que
- * o filtro linear disfarça mas não resolve. Uma fonte de verdade é item da
- * fase de assets.
+ * <p>As fontes, essas vêm de disco — de {@link Assets}, geradas pelo FreeType
+ * no tamanho exato de cada uso. É a divisão que faz sentido: um retângulo com
+ * borda de um pixel não ganha nada em virar arquivo, enquanto uma fonte
+ * desenhada por alguém ganha tudo. A skin não é dona delas e não as descarta.
  */
 public final class ProceduralSkin {
 
@@ -61,18 +62,19 @@ public final class ProceduralSkin {
     }
 
     /**
-     * Monta a skin. O chamador é dono dela e deve chamar {@code dispose()} —
-     * texturas e fontes são registradas dentro, então uma chamada basta.
+     * Monta a skin. O chamador é dono dela e deve chamar {@code dispose()}, que
+     * cuida das texturas geradas aqui — mas não das fontes, que são do
+     * {@link Assets}.
      */
-    public static Skin build() {
+    public static Skin build(Assets assets) {
         Skin skin = new Skin();
 
-        BitmapFont title = createFont(1.35f);
-        BitmapFont body = createFont(1f);
-        BitmapFont caption = createFont(0.8f);
-        skin.add("title", title);
-        skin.add("body", body);
-        skin.add("caption", caption);
+        // As fontes não são registradas na skin: skin.dispose() descartaria o
+        // que lhe foi adicionado, e elas pertencem ao AssetManager. Os estilos
+        // guardam a referência, que é tudo de que precisam.
+        BitmapFont title = assets.getTitleFont();
+        BitmapFont body = assets.getBodyFont();
+        BitmapFont caption = assets.getCaptionFont();
 
         NinePatchDrawable panel = bordered(skin, "panel", PANEL_FILL, PANEL_BORDER);
         NinePatchDrawable buttonUp = bordered(skin, "button-up", BUTTON_FILL, BUTTON_BORDER);
@@ -106,19 +108,6 @@ public final class ProceduralSkin {
         skin.add("default", button);
 
         return skin;
-    }
-
-    private static BitmapFont createFont(float scale) {
-        // A fonte padrão do libGDX vive dentro do jar — é o que permite esta
-        // skin não depender de disco. Filtro linear porque ela vai ser escalada.
-        BitmapFont font = new BitmapFont();
-        font.getRegion().getTexture().setFilter(Texture.TextureFilter.Linear,
-                Texture.TextureFilter.Linear);
-        if (scale != 1f) {
-            font.getData().setScale(scale);
-        }
-        font.setUseIntegerPositions(false);
-        return font;
     }
 
     /**
