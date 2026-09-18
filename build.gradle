@@ -69,3 +69,53 @@ java {
 application {
     mainClass = 'isoforge.DesktopLauncher'
 }
+
+// Jar único, com dependências e bibliotecas nativas dentro. O `natives-desktop`
+// do libGDX já traz .so, .dll e os dois .dylib (Intel e Apple Silicon), então o
+// mesmo arquivo roda nas três plataformas — o que importa aqui, já que a build
+// para Mac sai de uma máquina Linux.
+tasks.register('fatJar', Jar) {
+    group = 'distribution'
+    description = 'Empacota o jogo e todas as dependências num jar executável.'
+
+    archiveClassifier = 'all'
+    manifest {
+        attributes 'Main-Class': application.mainClass.get()
+    }
+
+    from sourceSets.main.output
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+
+    // Assinaturas das dependências não valem para o jar remontado, e cada
+    // dependência traz o seu module-info — que só atrapalha num classpath comum.
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'module-info.class'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// O pacote que vai para quem testa no Mac: o jar, um lançador de duplo clique
+// e as instruções. Não é um .app nem um .dmg — ambos exigiriam empacotar numa
+// máquina macOS. O preço disso é o testador precisar do Java 21 instalado.
+tasks.register('pacoteMac', Zip) {
+    group = 'distribution'
+    description = 'Monta o zip de teste para macOS (jar + lançador + instruções).'
+
+    dependsOn tasks.named('fatJar')
+    archiveFileName = "IsoForge-${project.version}-mac.zip"
+    destinationDirectory = layout.buildDirectory.dir('dist')
+
+    // Uma pasta dentro do zip, para o zip não explodir arquivos soltos na
+    // pasta de Downloads de quem abrir.
+    into("IsoForge-${project.version}") {
+        from(tasks.named('fatJar')) {
+            rename '.*', 'IsoForge.jar'
+        }
+        from('packaging/mac/LEIA-ME.txt')
+        from('packaging/mac/IsoForge.command') {
+            // Sem o bit de execução o Finder abre o script num editor de texto
+            // em vez de rodá-lo.
+            filePermissions { unix(0755) }
+        }
+    }
+}

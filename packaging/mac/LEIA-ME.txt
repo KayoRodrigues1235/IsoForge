@@ -1,0 +1,58 @@
+IsoForge — build de teste para macOS
+====================================
+
+Como abrir
+----------
+1. Descompacte esta pasta em qualquer lugar (Área de Trabalho serve).
+2. Clique com o botão direito em "IsoForge.command" e escolha "Abrir".
+   (No primeiro uso tem de ser pelo botão direito. Duplo clique simples o
+   macOS recusa, porque o arquivo veio da internet e não está assinado por
+   um desenvolvedor registrado na Apple. Depois da primeira vez, duplo
+   clique funciona normalmente.)
+3. Se aparecer um aviso de "desenvolvedor não identificado", clique em
+   "Abrir" de novo no diálogo. Se o botão não existir, vá em Ajustes do
+   Sistema > Privacidade e Segurança e clique em "Abrir assim mesmo".
+
+Uma janela de Terminal vai abrir junto com o jogo. É normal: ela é o
+lançador. Fechar o jogo fecha tudo.
+
+Requisito
+---------
+Java 21 ou mais novo. Se não estiver instalado, o próprio lançador avisa e
+mostra o link: https://adoptium.net/temurin/releases/?os=mac&version=21
+Baixe a versão "JRE" ou "JDK" para o seu Mac — "aarch64" para Macs com chip
+Apple (M1 em diante), "x64" para Macs com Intel.
+
+Funciona nos dois tipos de Mac: o jogo traz as bibliotecas nativas para
+Apple Silicon e para Intel dentro do mesmo arquivo.
+
+Controles
+---------
+Botão esquerdo      publica tarefa no tile (arraste para marcar vários)
+Botão direito       cancela a tarefa daquele tile
+Roda do mouse       aproxima e afasta
+W A S D / setas     move a câmera
+B                   entra e sai do modo de construção
+TAB                 troca entre cabana e torre
+Barra de espaço     pausa
+, e .               diminui e aumenta a velocidade (1x, 2x, 4x)
+X                   cancela todas as tarefas
+G                   liga e desliga a grade
+F3                  painel de depuração
+ESC                 fecha o jogo
+
+Todo comando também tem botão na HUD; o teclado é só o atalho.
+
+No trackpad do Mac: "botão direito" é clique com dois dedos (ou Control +
+clique), e o zoom é o gesto de dois dedos para cima e para baixo.
+
+O que esperar
+-------------
+É uma base técnica, não uma fatia jogável: dá para cortar árvores, erguer
+cabana e torre, e ver o dia passar em 150 segundos. Não existe adversário,
+território nem objetivo — é exatamente o que vem a seguir.
+
+Se algo der errado
+------------------
+A janela do Terminal que abriu junto guarda a mensagem de erro. Tire uma
+foto ou copie o texto dela: é o que permite descobrir o que houve.

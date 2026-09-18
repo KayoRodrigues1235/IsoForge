@@ -17,6 +17,12 @@ public final class DesktopLauncher {
     }
 
     public static void main(String[] args) {
+        // Precisa vir antes de qualquer chamada ao libGDX: no macOS este método
+        // pode reiniciar o processo inteiro. Ver MacStartup.
+        if (MacStartup.relancarSeNecessario(args)) {
+            return;
+        }
+
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
         config.setTitle("IsoForge");
         config.setWindowedMode(1280, 720);
